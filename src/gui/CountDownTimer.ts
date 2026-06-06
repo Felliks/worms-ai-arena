@@ -4,7 +4,7 @@
  * It also handles the switching of players when their time runs out. 
  *
  *  License: Apache 2.0
- *  author:  Ciar·n McCann
+ *  author:  Ciar√°n McCann
  *  url: http://www.ciaranmccann.me/
  */
 ///<reference path="../Main.ts"/>

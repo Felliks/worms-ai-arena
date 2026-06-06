@@ -4,7 +4,7 @@
  * Its normally a base class for most objects in game like the Worm. 
  *
  *  License: Apache 2.0
- *  author:  Ciar·n McCann
+ *  author:  Ciar√°n McCann
  *  url: http://www.ciaranmccann.me/
  */
 ///<reference path="../Game.ts"/>

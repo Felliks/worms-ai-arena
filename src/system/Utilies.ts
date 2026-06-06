@@ -12,7 +12,7 @@
  * which is faster then event based input.
  *
  *  License: Apache 2.0
- *  author:  Ciar·n McCann
+ *  author:  Ciar√°n McCann
  *  url: http://www.ciaranmccann.me/
  */
 ///<reference path="../Settings.ts" />
@@ -82,7 +82,7 @@ module Notify
         {
             $("#notifaction").animate({
                 top: (-parseInt($("#notifaction").css("height"))) - 100 + "px"
-            }, 400, function () => {
+            }, 400, () => {
                 locked = false;
                 if (callback != null)
                 {

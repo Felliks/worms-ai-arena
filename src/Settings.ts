@@ -2,7 +2,7 @@
  *  Global settings for the whole game
  *
  *  License: Apache 2.0
- *  author:  Ciar·n McCann
+ *  author:  Ciar√°n McCann
  *  url: http://www.ciaranmccann.me/
  */
 ///<reference path="system/Utilies.ts" />
@@ -11,15 +11,14 @@ module Settings
 {
 
     //Game vars
-    export var PLAYER_TURN_TIME = 45 * 1000; // 60 secounds
-    export var TURN_TIME_WARING = 5; // after 10 secounds warn player they are running out of time
+    export var PLAYER_TURN_TIME = 120 * 1000;
+    export var TURN_TIME_WARING = 10;
    
     //General game settings
     export var SOUND = false;
 
     //Server details
     export var NODE_SERVER_IP = '96.126.111.211'; 
-    export var LEADERBOARD_API_URL = 'http://96.126.111.211'; 
     export var NODE_SERVER_PORT = '8080';
 
     // development vars
@@ -30,12 +29,20 @@ module Settings
     // http://westciv.com/tools/manifestR/
     export var BUILD_MANIFEST_FILE = false;
 
-    export var REMOTE_ASSERT_SERVER = "../"; //"../college/fyp/"
-
-    export var API_KEY = "AIzaSyA1aZhcIhRQ2gbmyxV5t9pGK47hGsiIO7U";
+    export var REMOTE_ASSERT_SERVER = "./"; //"../college/fyp/"
 
     export var PHYSICS_DEBUG_MODE = false;
     export var RUN_UNIT_TEST_ONLY = !true;
+
+    export var ARENA_MODE = "";
+    export var ARENA_AUTO_START = false;
+    export var ARENA_TEAM_TYPES = [];
+    export var ARENA_TEAM_MODELS = [];
+    export var ARENA_AGENT_ENDPOINT = "/api/agent/turn";
+    export var ARENA_CHAT_LANGUAGE = "English";
+    export var ARENA_MEMORY_WINDOW = 14;
+    export var ARENA_MEMORY_STRATEGY = "sliding";
+    export var ARENA_MAX_BATCHES_PER_TURN = 4;
 
     export var NETWORKED_GAME_QUALITY_LEVELS = {
         HIGH: 0,
@@ -50,7 +57,7 @@ module Settings
     export function getSettingsFromUrl()
     {
         var argv = getUrlVars();
-        var commands = ["physicsDebugDraw","devMode","unitTest","sound"]
+        var commands = ["physicsDebugDraw","devMode","unitTest","sound","arena","teams","agentEndpoint","models","turnTime","turnMs","chatLang","chatLanguage","historySize","memoryWindow","memoryStrategy","maxBatches","maxBatchesPerTurn"]
 
         if (argv[commands[0]] == "true")
         {
@@ -72,6 +79,77 @@ module Settings
         if (argv[commands[3]] == "false")
         {
             SOUND = false;
+        }
+
+        if (argv[commands[4]])
+        {
+            ARENA_MODE = argv[commands[4]];
+            ARENA_AUTO_START = true;
+        }
+
+        if (argv[commands[5]])
+        {
+            ARENA_TEAM_TYPES = decodeURIComponent(argv[commands[5]]).split(",");
+        }
+
+        if (ARENA_TEAM_TYPES.length == 0 && ARENA_MODE == "llm-vs-llm")
+        {
+            ARENA_TEAM_TYPES = ["llm", "llm"];
+        }
+
+        if (ARENA_TEAM_TYPES.length == 0 && ARENA_MODE == "human-vs-llm")
+        {
+            ARENA_TEAM_TYPES = ["human", "llm"];
+        }
+
+        if (ARENA_TEAM_TYPES.length == 0 && ARENA_MODE != "")
+        {
+            ARENA_TEAM_TYPES = ["llm", "llm"];
+        }
+
+        if (argv[commands[6]])
+        {
+            ARENA_AGENT_ENDPOINT = decodeURIComponent(argv[commands[6]]);
+        }
+
+        if (argv[commands[7]])
+        {
+            ARENA_TEAM_MODELS = decodeURIComponent(argv[commands[7]]).split(",");
+        }
+
+        if (argv[commands[8]])
+        {
+            var turnSeconds = Math.max(5, Math.round(Number(argv[commands[8]]) || 120));
+            PLAYER_TURN_TIME = turnSeconds * 1000;
+        }
+
+        if (argv[commands[9]])
+        {
+            PLAYER_TURN_TIME = Math.max(5000, Math.round(Number(argv[commands[9]]) || PLAYER_TURN_TIME));
+        }
+
+        if (argv[commands[10]] || argv[commands[11]])
+        {
+            ARENA_CHAT_LANGUAGE = decodeURIComponent(argv[commands[10]] || argv[commands[11]]);
+        }
+
+        if (argv[commands[12]] || argv[commands[13]])
+        {
+            ARENA_MEMORY_WINDOW = Math.max(0, Math.min(200, Math.round(Number(argv[commands[12]] || argv[commands[13]]) || ARENA_MEMORY_WINDOW)));
+        }
+
+        if (argv[commands[14]])
+        {
+            var strategy = decodeURIComponent(argv[commands[14]]).toLowerCase();
+            if (strategy == "none" || strategy == "sliding" || strategy == "summary" || strategy == "full")
+            {
+                ARENA_MEMORY_STRATEGY = strategy;
+            }
+        }
+
+        if (argv[commands[15]] || argv[commands[16]])
+        {
+            ARENA_MAX_BATCHES_PER_TURN = Math.max(1, Math.min(12, Math.round(Number(argv[commands[15]] || argv[commands[16]]) || ARENA_MAX_BATCHES_PER_TURN)));
         }
 
         Logger.log(" Notice: argv are as follows " + commands);

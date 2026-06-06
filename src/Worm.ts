@@ -5,7 +5,7 @@
  * Its physics objects, sprite drawing, movements etc
  *
  *  License: Apache 2.0
- *  author:  Ciar·n McCann
+ *  author:  Ciar√°n McCann
  *  url: http://www.ciaranmccann.me/
  */
 ///<reference path="system/Graphics.ts"/>
@@ -131,7 +131,7 @@ class Worm extends Sprite
         var nameBoxWidth = this.name.length * 10;
         var healthBoxWidth = 39;
         var healthBoxHeight = 18
-        this.nameBox = Graphics.preRenderer.render(function (ctx) =>
+        this.nameBox = Graphics.preRenderer.render((ctx) =>
         {
 
             ctx.fillStyle = '#1A1110';
@@ -147,7 +147,7 @@ class Worm extends Sprite
 
         }, nameBoxWidth, 20);
 
-        this.healthBox = Graphics.preRenderer.render(function (ctx) =>
+        this.healthBox = Graphics.preRenderer.render((ctx) =>
         {
 
             ctx.fillStyle = '#1A1110';
@@ -386,7 +386,7 @@ class Worm extends Sprite
             {
                 // Setup a callback that once the animation finish
                 // unlock it and set it to idel
-                this.onAnimationFinish(function () =>
+                this.onAnimationFinish(() =>
                 {
                     this.setSpriteDef(Sprites.worms.wbackflp, false);
                     this.setSpriteDef(Sprites.worms.idle1, false);
@@ -421,6 +421,10 @@ class Worm extends Sprite
                 if (overrideClientOnlyUse || Client.isClientsTurn())
                 {
                     console.log("CLIENT HIT");
+                    if (typeof ArenaTelemetry != "undefined")
+                    {
+                        ArenaTelemetry.recordDamage(this, damage, worm);
+                    }
                     this.damageTake += damage;
                     GameInstance.wormManager.syncHit(this.name, damage)
                     AssetManager.getSound("ow" + Utilies.random(1, 2)).play(0.8);

@@ -1,0 +1,20 @@
+{
+  "compilerOptions": {
+    "target": "ES5",
+    "module": "none",
+    "rootDir": "src",
+    "outFile": "src/Worms.js",
+    "sourceMap": true,
+    "removeComments": false,
+    "strict": false,
+    "noImplicitAny": false,
+    "noEmitOnError": false,
+    "skipLibCheck": true,
+    "lib": ["DOM", "ES5"],
+    "ignoreDeprecations": "6.0"
+  },
+  "files": [
+    "src/legacy-globals.d.ts",
+    "src/main.ts"
+  ]
+}

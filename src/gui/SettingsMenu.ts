@@ -4,7 +4,7 @@
  * allows them to start the game and shows them the controls.
  *
  *  License: Apache 2.0
- *  author:  Ciar·n McCann
+ *  author:  Ciar√°n McCann
  *  url: http://www.ciaranmccann.me/
  */
 ///<reference path="../Settings.ts" />
@@ -52,7 +52,7 @@ class SettingsMenu
             $('a.thumbnail').css({ "background": "white" });
             $(this).css({ "background": "yellow" });
             _this.levelName = levelId;
-            Game.map = new Map(Maps[levelId]);
+            Game.map = new GameMap(Maps[levelId]);
             callback();
 
         });

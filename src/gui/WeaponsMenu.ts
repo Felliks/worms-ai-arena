@@ -5,7 +5,7 @@
  * It displays all the weapons + ammo and allows the user to select a weapon.
  *
  *  License: Apache 2.0
- *  author:  Ciar·n McCann
+ *  author:  Ciar√°n McCann
  *  url: http://www.ciaranmccann.me/
  */
 ///<reference path="../Main.ts"/>
@@ -30,7 +30,7 @@ class WeaponsMenu
         this.htmlElement = $("#" + this.cssId);
 
 
-         $('#'+this.toggleButtonCssId).click(function =>
+         $('#'+this.toggleButtonCssId).click(() =>
          {
              if (Client.isClientsTurn())
             {
@@ -47,7 +47,7 @@ class WeaponsMenu
             }
         });
 
-        $('body').mousedown(function (event) =>
+        $('body').mousedown((event) =>
         {
             if (Client.isClientsTurn() && Controls.checkControls(Controls.toggleWeaponMenu, event.which))
             {

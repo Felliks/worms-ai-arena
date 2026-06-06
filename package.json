@@ -1,0 +1,49 @@
+{
+  "name": "worms-armageddon-vlm",
+  "version": "1.0.0",
+  "description": "LLM/VLM Worms-style browser arena benchmark",
+  "type": "commonjs",
+  "private": true,
+  "directories": {
+    "doc": "docs"
+  },
+  "scripts": {
+    "dev": "npm run build:legacy && tsx server/index.ts",
+    "build": "npm run build:legacy && tsc -p tsconfig.node.json",
+    "build:legacy": "tsx scripts/build-legacy.ts",
+    "fetch:assets": "tsx scripts/fetch-legacy-assets.ts",
+    "typecheck": "tsc -p tsconfig.node.json --noEmit",
+    "test": "vitest run --passWithNoTests",
+    "qa:browser": "tsx scripts/browser-qa.ts"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/CiaranMcCann/Worms-Armageddon-HTML5-Clone.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "Apache-2.0",
+  "bugs": {
+    "url": "https://github.com/CiaranMcCann/Worms-Armageddon-HTML5-Clone/issues"
+  },
+  "homepage": "https://github.com/CiaranMcCann/Worms-Armageddon-HTML5-Clone#readme",
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.101.0",
+    "@langchain/core": "^1.1.48",
+    "@langchain/langgraph": "^1.3.6",
+    "@langchain/openai": "^1.4.7",
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1",
+    "langchain": "^1.4.4",
+    "openai": "^6.42.0",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.6",
+    "@types/node": "^25.9.2",
+    "playwright": "^1.60.0",
+    "tsx": "^4.22.4",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.8"
+  }
+}

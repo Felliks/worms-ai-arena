@@ -3,13 +3,11 @@
  * LobbyMenu.js
  *
  *  License: Apache 2.0
- *  author:  Ciar·n McCann
+ *  author:  Ciar√°n McCann
  *  url: http://www.ciaranmccann.me/
  */
 ///<reference path="../Game.ts"/>
 ///<reference path="../networking/Lobby.ts"/>
-///<reference path="../networking/LeaderBoard/GooglePLus.ts"/>
-///<reference path="LeaderBoardView.ts"/>
 
 class LobbyMenu
 {
@@ -21,20 +19,14 @@ class LobbyMenu
         JOIN_BTN: ".join",
         INFO_BOX: "#infoBox",
         CREATE_LOBBY_POP_UP: "#createLobby",
-        NICKNAME_PICK_UP: "#nickname",
         CREATE_LOBBY_FORM: "#createLobbyForm",
         CREATE_LOBBY_FORM_SUBMIT: "#submit",
-        USER_COUNT_BOX: "#userCount",
-        LEADERBOARDS_TABLE: "#leaderBoards"
+        USER_COUNT_BOX: "#userCount"
     }
     private lobbyRef: Lobby;
-    private leaderBoardView: LeaderBoardView;
-
     constructor(lobby: Lobby)
     {
         this.lobbyRef = lobby;
-        this.leaderBoardView = new LeaderBoardView();
-
         this.view = '<span class="label label-success" style="float:left;padding:3px;text-align:center;">Connected users   <span class="badge badge-inverse" id=' + LobbyMenu.CSS_ID.USER_COUNT_BOX.replace('#', '') + '></span></span><br>';
 
         this.view += '<div class="navbar" id="onlineMenu">' +
@@ -42,12 +34,8 @@ class LobbyMenu
                 '  <div class="nav-collapse collapse navbar-responsive-collapse">' +
                    ' <ul class="nav">' +
                       '<li class="active"><a href="#" value="#lobbies">Game Lobbies</a></li>' +
-                      '<li><a href="#"  value="#leaderBoards">Leaderboards</a></li>' +
-
                    ' </ul>' +
-                   ' <ul class="nav pull-right">' +
-                    ' <li><a href="#"  value="#profile">Profiles</a></li>' +
-                    '</ul></div></div></div></div>';
+                    '</div></div></div></div>';
 
         this.view += ' <div style="text-align:center" id="tabContainer" >';
 
@@ -59,11 +47,6 @@ class LobbyMenu
             '<a class="btn btn-primary btn-large" id=' + LobbyMenu.CSS_ID.QUICK_PLAY_BTN.replace('#', '') + ' style="text-align:center">Quick Play</a>' +
             '<a class="btn btn-primary btn-large" id=' + LobbyMenu.CSS_ID.CREATE_BTN.replace('#', '') + ' style="text-align:center">Create Lobby</a>' +
             '</div>';
-
-        this.view += this.leaderBoardView.getView();
-
-        this.view += this.leaderBoardView.getProfileView();
-
         this.view += '</div>';
 
     }
@@ -77,19 +60,10 @@ class LobbyMenu
 
     bind()
     {
-        
-        $('#googlePlusdisconnectUser').click(function ()
-        {
-            googlePlusdisconnectUser(access_token);
-        });
-
         var _this = this;
         $('#onlineMenu a').click(function (e)
         {
             e.preventDefault();
-
-            _this.leaderBoardView.update();
-            //this.leaderBoardView.update();
             //Changes the menu css to give user feedback
             $('.nav').children().removeClass('active');
             $(this).parent().addClass('active');
@@ -99,14 +73,14 @@ class LobbyMenu
             $($(this).attr('value')).siblings().hide();
         })
 
-        $(LobbyMenu.CSS_ID.QUICK_PLAY_BTN).click(function =>
+        $(LobbyMenu.CSS_ID.QUICK_PLAY_BTN).click(() =>
         {
             $(LobbyMenu.CSS_ID.QUICK_PLAY_BTN).unbind();
             AssetManager.getSound("CursorSelect").play();
             this.lobbyRef.client_joinQuickGame();
         })
 
-        $(LobbyMenu.CSS_ID.CREATE_BTN).click(function =>
+        $(LobbyMenu.CSS_ID.CREATE_BTN).click(() =>
         {
             $(LobbyMenu.CSS_ID.CREATE_LOBBY_POP_UP).modal('show');
 
@@ -115,13 +89,13 @@ class LobbyMenu
             if ($('#mapSelector').length == 0)
             {
                 $('.modal-body').prepend(levelSelector.getView());
-                levelSelector.bind(function () => {
+                levelSelector.bind(() => {
                     AssetManager.getSound("CursorSelect").play();
 
                 });
             }
 
-            $(LobbyMenu.CSS_ID.CREATE_LOBBY_FORM_SUBMIT).click(function (e) =>
+            $(LobbyMenu.CSS_ID.CREATE_LOBBY_FORM_SUBMIT).click((e) =>
             {
                 $(LobbyMenu.CSS_ID.CREATE_LOBBY_FORM_SUBMIT).unbind();
                 var name = $(LobbyMenu.CSS_ID.CREATE_LOBBY_FORM + " #inputName").val();
@@ -142,12 +116,10 @@ class LobbyMenu
 
     show(callback)
     {
-        $('.slide').fadeOut('normal', function =>
+        $('.slide').fadeOut('normal', () =>
         {
             $('.slide').empty();
             $('.slide').append(this.view);
-
-            $(LobbyMenu.CSS_ID.NICKNAME_PICK_UP).modal('show');
 
             this.updateLobbyListUI(this.lobbyRef);
             this.updateUserCountUI(this.lobbyRef.userCount);

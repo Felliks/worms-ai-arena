@@ -2,7 +2,7 @@
  * ForceIndicator.js
  *
  *  License: Apache 2.0
- *  author:  Ciar·n McCann
+ *  author:  Ciar√°n McCann
  *  url: http://www.ciaranmccann.me/
  */
 ///<reference path="../animation/Sprite.ts"/>
@@ -39,7 +39,7 @@ class ForceIndicator
 
             if (this.needReRender)
             {
-                this.renderCanvas = Graphics.preRenderer.render(function (context) =>
+                this.renderCanvas = Graphics.preRenderer.render((context) =>
                 {
                     // if(this.renderCanvas == null)
                      //context.fillRect(0, 0, 400, 400);
@@ -96,6 +96,17 @@ class ForceIndicator
         return this.forcePercentage > 1;
     }
 
+    setForcePercentage(forcePercentage)
+    {
+        this.forcePercentage = Math.max(1, Math.min(100, forcePercentage));
+        this.needReRender = true;
+    }
+
+    getForcePercentage()
+    {
+        return this.forcePercentage;
+    }
+
     setMaxForce(forceScalerMax)
     {
         this.forceMax = forceScalerMax;
@@ -108,10 +119,14 @@ class ForceIndicator
             this.forcePercentage = 1;
             AssetManager.getSound("THROWPOWERUP").pause();
             AssetManager.getSound("THROWRELEASE").play();
-            this.renderCanvas.getContext('2d').clearRect(0, 0, this.renderCanvas.width, this.renderCanvas.height);
+            if (this.renderCanvas)
+            {
+                this.renderCanvas.getContext('2d').clearRect(0, 0, this.renderCanvas.width, this.renderCanvas.height);
+            }
 
             //Used to reset the sprite
             this.sprite.currentFrameY = 0;
+            this.needReRender = true;
         }
     }
 

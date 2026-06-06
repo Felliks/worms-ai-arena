@@ -4,7 +4,7 @@
  * it also setup the request animation frame shim and the stats.js fps counter
  * 
  *  License: Apache 2.0
- *  author:  Ciar·n McCann
+ *  author:  Ciar√°n McCann
  *  url: http://www.ciaranmccann.me/
  */
 declare var Stats;

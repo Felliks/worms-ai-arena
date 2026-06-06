@@ -3,7 +3,7 @@
  * The name generator gets a list of famous programmers from wikipeda and randomly assigns them to worms
  *
  *  License: Apache 2.0
- *  author:  Ciar·n McCann
+ *  author:  Ciar√°n McCann
  *  url: http://www.ciaranmccann.me/
  */
 ///<reference path="Utilies.ts" />
@@ -32,7 +32,7 @@ module NameGenerator
         //$.ajax({
         //    url: nameDataSrc,
         //    dataType: 'jsonp',
-        //    success: function (data) =>
+        //    success: (data) =>
         //    {
         //        randomNamesList = [];
         //        randomNamesList = JSON.stringify(data).match(new RegExp("\\*\\[\\[[A-Z,a-z, ]+]]", "g"))

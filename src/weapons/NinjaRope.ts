@@ -2,7 +2,7 @@
  * NinjaRope.js
  *
  *  License: Apache 2.0
- *  author:  Ciar·n McCann
+ *  author:  Ciar√°n McCann
  *  url: http://www.ciaranmccann.me/
  */
 ///<reference path="../system/Graphics.ts"/>

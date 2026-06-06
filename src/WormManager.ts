@@ -2,7 +2,7 @@
  * WormManager.js
  *
  *  License: Apache 2.0
- *  author:  Ciar·n McCann
+ *  author:  Ciar√°n McCann
  *  url: http://www.ciaranmccann.me/
  */
 ///<reference path="system/Camera.ts"/>
@@ -55,6 +55,59 @@ class WormManager
     areAllWormsReadyForNextTurn()
     {
         return WormAnimationManger.playerAttentionSemaphore == 0 && this.areAllWormsStationary() && this.areAllWormsDamageTaken() && this.areAllWeaponsDeactived();
+    }
+
+    forceOutOfBoundsDeaths()
+    {
+        if (!GameInstance || !GameInstance.terrain)
+        {
+            return 0;
+        }
+
+        var waterLine = GameInstance.terrain.getHeight() - 40;
+        var killed = 0;
+        for (var i = this.allWorms.length - 1; i >= 0; --i)
+        {
+            var worm = this.allWorms[i];
+            if (worm.isDead)
+            {
+                continue;
+            }
+
+            var pos = Physics.vectorMetersToPixels(worm.body.GetPosition().Copy());
+            if (pos.y < waterLine)
+            {
+                continue;
+            }
+
+            worm.damageTake = 0;
+            worm.setHealth(0);
+            worm.isDead = true;
+            worm.body.SetLinearVelocity(new b2Vec2(0, 0));
+            worm.body.SetAngularVelocity(0);
+            worm.body.SetAwake(false);
+            if (worm.arrow)
+            {
+                worm.arrow.finished = true;
+            }
+            var weapon = worm.team.getWeaponManager().getCurrentWeapon();
+            if (weapon && weapon.getIsActive && weapon.getIsActive())
+            {
+                weapon.deactivate();
+            }
+            if (GameInstance.healthMenu)
+            {
+                GameInstance.healthMenu.update(worm.team);
+            }
+            if (worm.isActiveWorm() && !GameInstance.state.hasNextTurnBeenTiggered())
+            {
+                GameInstance.state.tiggerNextTurn();
+            }
+            Logger.log("Arena drowning fail-safe killed " + worm.name + " at y " + Math.round(pos.y) + " below water line " + waterLine);
+            killed++;
+        }
+
+        return killed;
     }
 
     // Are all the worms stop, not moving at all. 

@@ -1,4 +1,4 @@
-class Map
+class GameMap
 {
     private mapDef;
     private currentSpawn;

@@ -4,7 +4,7 @@
  * GameLobby.js
  *
  *  License: Apache 2.0
- *  author:  Ciarán McCann
+ *  author:  CiarÃ¡n McCann
  *  url: http://www.ciaranmccann.me/
  */
 
@@ -72,10 +72,10 @@ class GameLobby
     client_init()
     {
         //Have the host client setup all the player objects with all the other clients ids
-        Client.socket.on(Events.gameLobby.START_GAME_HOST, function (data) =>
+        Client.socket.on(Events.gameLobby.START_GAME_HOST, (data) =>
         {
             var gameLobby = (Utilies.copy(new GameLobby(null, null), data));
-            Game.map = new Map(Maps[gameLobby.mapName]);
+            Game.map = new GameMap(Maps[gameLobby.mapName]);
             
             //Update local copy of the lobby
             GameInstance.lobby.client_GameLobby = gameLobby;
@@ -89,10 +89,10 @@ class GameLobby
 
         // Start the game for all other playrs by passing the player information create
         // by the host client to them.
-        Client.socket.on(Events.gameLobby.START_GAME_FOR_OTHER_CLIENTS, function (data) =>
+        Client.socket.on(Events.gameLobby.START_GAME_FOR_OTHER_CLIENTS, (data) =>
         {
              var gameLobby = (Utilies.copy(new GameLobby(null, null), data.lobby));          
-             Game.map = new Map(Maps[gameLobby.mapName]);
+             Game.map = new GameMap(Maps[gameLobby.mapName]);
 
              //Update local copy of the lobby
             GameInstance.lobby.client_GameLobby = gameLobby;
@@ -160,12 +160,12 @@ class GameLobby
         return (this.playerIds.length == 0);
     }
 
-    join(userId, googleUserId, socket)
+    join(userId, profileUserId, socket)
     {
         //Stops a user from joing a room twice
         if (this.contains(userId) == false && this.status == GameLobby.LOBBY_STATS.WATTING_FOR_PLAYERS)
         {
-            console.log("Player " + googleUserId + " added to gamelobby " + this.id + " and name " + this.name);
+            console.log("Player " + profileUserId + " added to gamelobby " + this.id + " and name " + this.name);
 
             // Add the player to the gameLobby socket.io room
             socket.join(this.id);

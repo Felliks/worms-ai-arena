@@ -2,7 +2,7 @@
  * JetPack.js
  *
  *  License: Apache 2.0
- *  author:  Ciar·n McCann
+ *  author:  Ciar√°n McCann
  *  url: http://www.ciaranmccann.me/
  */
 ///<reference path="../system/Graphics.ts"/>
@@ -113,6 +113,45 @@ class JetPack extends BaseWeapon
     {
         this.forceDir.x = 1.2;
         this.worm.direction = 1;
+    }
+
+    applyAiThrust(direction)
+    {
+        if (!this.isActive || !this.worm || this.fuel <= 0)
+        {
+            return false;
+        }
+
+        var dir = String(direction || "up").toLowerCase();
+        var force = new b2Vec2(0, 0);
+        if (dir == "up" || dir == "up_left" || dir == "up_right")
+        {
+            force.y = -1;
+        }
+        if (dir == "left" || dir == "up_left")
+        {
+            force.x = -1.2;
+            this.worm.direction = -1;
+        }
+        if (dir == "right" || dir == "up_right")
+        {
+            force.x = 1.2;
+            this.worm.direction = 1;
+        }
+
+        if (force.Length() <= 0)
+        {
+            return false;
+        }
+
+        this.forceDir = force.Copy();
+        Utilies.pickRandomSound(["JetPackLoop1", "JetPackLoop2"]).play();
+        this.fuel -= 0.09;
+        force.Multiply(this.thurstScaler);
+        this.worm.body.ApplyImpulse(force, this.worm.body.GetWorldCenter());
+        this.worm.setSpriteDef(Sprites.worms.defualtJetPack);
+        this.worm.finished = true;
+        return true;
     }
 
     deactivate()

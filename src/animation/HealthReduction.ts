@@ -2,7 +2,7 @@
  * HealthReduction.js
  *
  *  License: Apache 2.0
- *  author:  Ciar·n McCann
+ *  author:  Ciar√°n McCann
  *  url: http://www.ciaranmccann.me/
  */
 ///<reference path="Sprite.ts"/>
@@ -34,7 +34,7 @@ class ToostMessage
     {
         var healthBoxWidth = 39;
         var healthBoxHeight = 18
-        return Graphics.preRenderer.render(function (ctx) =>
+        return Graphics.preRenderer.render((ctx) =>
         {
 
             ctx.fillStyle = '#1A1110';
@@ -49,7 +49,7 @@ class ToostMessage
     preRenderMessageBox()
     {
         var nameBoxWidth = this.message.length * 10;
-        return Graphics.preRenderer.render(function (ctx) =>
+        return Graphics.preRenderer.render((ctx) =>
         {
 
             ctx.fillStyle = '#1A1110';

@@ -10,7 +10,7 @@
  * as this code is viewable on GitHub :) 
  *
  *  License: Apache 2.0
- *  author:  Ciar·n McCann
+ *  author:  Ciar√°n McCann
  *  url: http://www.ciaranmccann.me/
  */
 

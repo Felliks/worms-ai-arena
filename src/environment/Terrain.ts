@@ -5,7 +5,7 @@
  * constructs box2d objects which make up the terrain. It also handles deformations
  *
  *  License: Apache 2.0
- *  author:  Ciar·n McCann
+ *  author:  Ciar√°n McCann
  *  url: http://www.ciaranmccann.me/
  */
 ///<reference path="../system/Physics.ts"/>
@@ -55,7 +55,7 @@ class Terrain
         this.bufferCanvas.height =  this.Offset.y+(terrainImage.height*1.5);
         this.boundary = new TerrainBoundary(this.bufferCanvas.width+this.Offset.x, this.bufferCanvas.height+100);
 
-        this.bufferCanvasContext = this.bufferCanvas.getContext('2d');
+        this.bufferCanvasContext = this.bufferCanvas.getContext('2d', { willReadFrequently: true });
 
         this.bufferCanvasContext.fillStyle = 'rgba(0,0,0,255)'; //Setup alpha colour for cutting out terrain
         this.bufferCanvasContext.drawImage(terrainImage, this.Offset.x,  this.Offset.y, this.bufferCanvas.width-this.Offset.x, this.bufferCanvas.height-this.Offset.y);
@@ -103,7 +103,7 @@ class Terrain
         var bodiesCreated = 0;
 
         // Used to create a single rect out of a series of consecnative solid 
-        var makeBlock = function () => {
+        var makeBlock = () => {
 
             fixDef.shape.SetAsBox((rectWidth / worldScale) / 2, (rectheight / worldScale) / 2);
             bodyDef.position.x = ((xPos / 4) - (rectWidth / 2)) / worldScale;
@@ -216,7 +216,7 @@ class Terrain
                 Physics.pixelToMeters( y + normalizedRadis)
             );
 
-            Physics.world.QueryAABB(function (fixture) =>
+            Physics.world.QueryAABB((fixture) =>
             {
                 if (fixture.GetBody().GetType() == b2Body.b2_staticBody && fixture.GetBody().GetUserData() instanceof Terrain)
                 {

@@ -2,7 +2,7 @@
  *  Effects.js
  *
  *  License: Apache 2.0
- *  author:  Ciar·n McCann
+ *  author:  Ciar√°n McCann
  *  url: http://www.ciaranmccann.me/
  */
 ///<reference path="../system/Utilies.ts"/>
@@ -26,6 +26,11 @@ module Effects
         particleEffectType = ParticleEffect,
        )
     {
+        if (typeof ArenaTelemetry != "undefined")
+        {
+            ArenaTelemetry.recordExplosion(epicenter, explosionRadius, maxDamage, entityThatCausedExplosion);
+        }
+
         var posX = Physics.metersToPixels(Math.floor(epicenter.x));
         var posY = Physics.metersToPixels(Math.floor(epicenter.y));
 
@@ -34,7 +39,7 @@ module Effects
         Physics.applyToNearByObjects(
             epicenter,
             effectedRadius,
-            function (fixture, epicenter) =>
+            (fixture, epicenter) =>
             {
                 // Applys force to all the bodies in the radius
                 if (fixture.GetBody().GetType() != b2Body.b2_staticBody && fixture.GetBody().GetUserData() instanceof Worm)

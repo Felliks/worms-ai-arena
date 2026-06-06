@@ -5,7 +5,7 @@
  * AssetManager.images["myImageName"] no need for the full url or the extenision
  * 
  *  License: Apache 2.0
- *  author:  Ciar·n McCann
+ *  author:  Ciar√°n McCann
  *  url: http://www.ciaranmccann.me/
  */
 ///<reference path="../audio/Sound.ts"/>
@@ -128,13 +128,13 @@ module AssetManager
 
                 images[name].onload = function ()
                 {
-                    Logger.log(" Image " + this.src + " loaded sucessfully ");
                     if (++loadedImages >= numImages)
                     {
                         for (var img in images)
                         {
                             AssetManager.images[img] = images[img];
                         }
+                        Logger.log("Loaded " + loadedImages + " image assets.");
                     }
 
                     numAssetsLoaded++;
@@ -183,33 +183,18 @@ module AssetManager
 
     export function loadAssets()
     {
-        addSpritesDefToLoadList();
+        if (!Settings.SOUND)
+        {
+            audioToBeLoaded = [];
+        }
 
+        addSpritesDefToLoadList();
         loadImages(imagesToBeLoaded);
 
-    
-        //Hmm seems like IE9 doesn't like loading anymore then 40 audio files in parallel.  
-        //I have 44 audio assets :( #FuckYouInternetExplorer
-        //Putting in a delay for IE users
-        //if ($.browser.msie)
-        //{
-        //    var leftSide = audioToBeLoaded.splice(0, Math.floor(audioToBeLoaded.length / 2));
-        //    loadSounds(leftSide);
-
-        //    var timer = setInterval(function () => {
-
-        //        if (numAssetsLoaded >= imagesToBeLoaded.length + leftSide.length)
-        //        {
-        //            loadSounds(audioToBeLoaded);
-        //            clearInterval(timer);
-        //        }
-
-        //    }, 5000);
-
-        //} else
-        //{
+        if (audioToBeLoaded.length > 0)
+        {
             loadSounds(audioToBeLoaded);
-        //}
+        }
     }
 
     export function loadSounds(sources)

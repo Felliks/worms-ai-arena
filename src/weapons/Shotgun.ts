@@ -98,7 +98,7 @@ class Shotgun extends RayWeapon
                 this.animationSheetChangeTimer.pause();
                 this.fireAnimationIndex = 0;
 
-                setTimeout(function () => {
+                setTimeout(() => {
                     this.setIsActive(false);
                     this.worm.swapSpriteSheet(this.fireAnimations[this.fireAnimationIndex]);
 
@@ -118,3 +118,4 @@ class Shotgun extends RayWeapon
 
 
     }
+}

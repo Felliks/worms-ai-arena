@@ -4,7 +4,7 @@
  * once the effect it complete it will be removed from the collection
  *
  *  License: Apache 2.0
- *  author:  Ciar·n McCann
+ *  author:  Ciar√°n McCann
  *  url: http://www.ciaranmccann.me/
  */
 ///<reference path="Sprite.ts"/>

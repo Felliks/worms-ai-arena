@@ -12,6 +12,13 @@
 #Directories
 obj
 bin
+node_modules/
+.worktrees/
+logs/
+.idea/
+.env
+.env.*
+!.env.example
 *.js
 *.map
 data/

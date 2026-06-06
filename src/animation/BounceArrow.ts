@@ -2,7 +2,7 @@
  * BounceArrow.js
  *
  *  License: Apache 2.0
- *  author:  Ciar·n McCann
+ *  author:  Ciar√°n McCann
  *  url: http://www.ciaranmccann.me/
  */
 ///<reference path="Sprite.ts"/>
@@ -20,10 +20,10 @@ class BounceArrow extends Sprite
 
     constructor (initalPos)
     {
+        super(Sprites.weapons.arrow);
         initalPos.x -= 15;
         initalPos.y -= 120;
         this.initalPos = initalPos;
-        super(Sprites.weapons.arrow);    
     }
 
     draw(ctx)

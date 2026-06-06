@@ -4,7 +4,7 @@
  * can use to drill down into the terrain and also hurt other worms.
  *
  *  License: Apache 2.0
- *  author:  Ciar·n McCann
+ *  author:  Ciar√°n McCann
  *  url: http://www.ciaranmccann.me/
  */
 ///<reference path="../system/Physics.ts"/>

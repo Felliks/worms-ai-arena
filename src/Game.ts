@@ -3,7 +3,7 @@
  * This is the main game object which controls gameloop and basically everything in the game
  *
  *  License: Apache 2.0
- *  author:  Ciar·n McCann
+ *  author:  Ciar√°n McCann
  *  url: http://www.ciaranmccann.me/
  */
 ///<reference path="system/Camera.ts"/>
@@ -63,7 +63,7 @@ class Game
 
     winner: Player;
 
-    static map: Map = new Map(Maps.castle);
+    static map: GameMap = new GameMap(Maps.castle);
 
     camera: Camera;
 
@@ -89,20 +89,20 @@ class Game
         this.setupCanvas();
 
         //If the window gets resize, resize the canvas
-        $(window).resize(function () => {
+        $(window).resize(() => {
             this.setupCanvas();
         });
 
         //If we go full screen also resize
-        document.addEventListener("fullscreenchange", function () => {
+        document.addEventListener("fullscreenchange", () => {
             this.setupCanvas();
         }, false);
 
-        document.addEventListener("mozfullscreenchange", function () => {
+        document.addEventListener("mozfullscreenchange", () => {
             this.setupCanvas();
         }, false);
 
-        document.addEventListener("webkitfullscreenchange", function () => {
+        document.addEventListener("webkitfullscreenchange", () => {
             this.setupCanvas();
         }, false);
 
@@ -117,7 +117,7 @@ class Game
         this.spawns = [];
         if (Settings.DEVELOPMENT_MODE && this.particleEffectMgmt != null)
         {
-            window.addEventListener("click", function (evt: any) =>
+            window.addEventListener("click", (evt: any) =>
             {
                 this.particleEffectMgmt.add(new ParticleEffect(this.camera.getX() + evt.pageX, this.camera.getY() + evt.pageY));
                 this.spawns.push(new b2Vec2(this.camera.getX() + evt.pageX, this.camera.getY() + evt.pageY));
@@ -186,7 +186,8 @@ class Game
 
         if (this.gameType == Game.types.LOCAL_GAME)
         {
-            for (var i = 0; i < 2; i++)
+            var localPlayerCount = Settings.ARENA_TEAM_TYPES.length > 0 ? Settings.ARENA_TEAM_TYPES.length : 2;
+            for (var i = 0; i < localPlayerCount; i++)
             {
                 this.players.push(new Player());
             }
@@ -247,7 +248,7 @@ class Game
         //Only inited if its a touch device
         TouchUI.init();
 
-        setTimeout(function () =>
+        setTimeout(() =>
         {
             this.state.physicsWorldSettled = true;
 
@@ -293,6 +294,8 @@ class Game
     {
         if (this.state.isStarted)
         {
+            this.wormManager.forceOutOfBoundsDeaths();
+
             // while no winner, check for one
             if (this.winner == null)
             {
@@ -302,19 +305,7 @@ class Game
                 {
                     this.gameTimer.timer.pause();
                     this.winner.getTeam().celebrate();
-
-                    //TODO fix this up, do server side, just putting in for demo 2moro.
-                    if (this.winner.id == Client.id && access_token && GameInstance.gameType != Game.types.LOCAL_GAME)
-                    {
-                        Notify.display("Congratulations you won!", "", -1,Notify.levels.sucess,true);
-                        $.ajax({
-                            url: "http://96.126.111.211/updateUser/" + access_token,
-                            dataType: 'jsonp'
-                        });
-                    } else
-                    {
-                        Notify.display("Unlucky you lost, better luck next time", "", -1, Notify.levels.error,true);
-                    }
+                    Notify.display(this.winner.getTeam().name + " wins!", "", -1, Notify.levels.sucess, true);
                 }
             }
 

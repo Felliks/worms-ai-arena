@@ -5,14 +5,15 @@
  * Main entry piont
  *
  *  License: Apache 2.0
- *  author:  Ciar·n McCann
+ *  author:  Ciar√°n McCann
  *  url: http://www.ciaranmccann.me/
  */
 ///<reference path="Game.ts"/>
 ///<reference path="system/Graphics.ts"/>
 ///<reference path="gui/StartMenu.ts" />
+///<reference path="llm/ArenaController.ts" />
 var GameInstance: Game;
-$(document).ready(function () => {
+$(document).ready(() => {
 
     Settings.getSettingsFromUrl();
 
@@ -21,6 +22,7 @@ $(document).ready(function () => {
         var startMenu = new StartMenu();
 
         GameInstance = new Game();
+        ArenaControllerInstance = new ArenaController(GameInstance);
         AssetManager.loadAssets();
         
         startMenu.onGameReady(function ()
@@ -29,6 +31,7 @@ $(document).ready(function () => {
             if (GameInstance.state.isStarted == false)
             {
                 GameInstance.start();
+                ArenaControllerInstance.start();
             }
 
             function gameloop()
@@ -38,6 +41,7 @@ $(document).ready(function () => {
 
                 GameInstance.step();
                 GameInstance.update();
+                ArenaControllerInstance.update();
                 GameInstance.draw();
                 window.requestAnimationFrame(gameloop);
             }

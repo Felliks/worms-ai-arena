@@ -4,7 +4,7 @@
  * It also defines the controls for the worms movements.
  *
  *  License: Apache 2.0
- *  author:  Ciar·n McCann
+ *  author:  Ciar√°n McCann
  *  url: http://www.ciaranmccann.me/
  */
 ///<reference path="Team.ts"/>
@@ -26,7 +26,7 @@ class Player
         this.team = new Team(playerId);
 
         // Global window keyup event
-        $(window).keyup(function (e) =>
+        $(window).keyup((e) =>
         {
             // Dectects keyup on fire button
             if (e.which == Controls.fire.keyboard)
@@ -98,7 +98,7 @@ class Player
 
         var onlineSpefic = Client.isClientsTurn();
 
-        if (onlineSpefic && GameInstance.state.getCurrentPlayer() == this && GameInstance.state.hasNextTurnBeenTiggered() == false)
+        if (onlineSpefic && (!ArenaControllerInstance || !ArenaControllerInstance.controlsPlayer(this)) && GameInstance.state.getCurrentPlayer() == this && GameInstance.state.hasNextTurnBeenTiggered() == false)
         {
 
             //Player controls 

@@ -2,7 +2,7 @@
  * GameStateManager.js
  *
  *  License: Apache 2.0
- *  author:  Ciar·n McCann
+ *  author:  Ciar√°n McCann
  *  url: http://www.ciaranmccann.me/
  */
 ///<reference path="system/Camera.ts"/>
@@ -68,6 +68,8 @@ class GameStateManager
 
         if (this.nextTurnTrigger)
         {
+            GameInstance.wormManager.forceOutOfBoundsDeaths();
+
             // REQUIRED STATES 
             // animations finished, which include particle effects.
             // deaths if any

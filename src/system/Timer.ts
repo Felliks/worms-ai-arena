@@ -4,7 +4,7 @@
  * the codebase and window.SetTimeOut() isn't as fexible as I would like
  *
  *  License: Apache 2.0
- *  author:  Ciar·n McCann
+ *  author:  Ciar√°n McCann
  *  url: http://www.ciaranmccann.me/
  */
 class Timer
@@ -27,6 +27,12 @@ class Timer
     pause()
     {
         this.isTimerPaused = true;
+    }
+
+    resume()
+    {
+        this.timeSinceLastUpdate = this.getTimeNow();
+        this.isTimerPaused = false;
     }
 
     hasTimePeriodPassed(rest = true)
