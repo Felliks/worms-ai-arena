@@ -1,0 +1,21 @@
+{
+  "_README": "Copy this file to assets/sources.local.json (gitignored) and fill it with sources you are AUTHORISED to use. Keys are paths INSIDE the pack (assets/worms-<pack>/...). Values are http(s) URLs or local file paths - e.g. files you extracted from your own legally-owned copy of Worms Armageddon. See ASSETS.md for the legal context and where assets can be obtained. Nothing here is downloaded for you and nothing is committed.",
+  "_reference_sources": {
+    "sprites_pc": "https://www.spriters-resource.com/pc_computer/wormsgeddon/",
+    "sound_effects": "https://www.sounds-resource.com/pc_computer/wormsarmageddon/sound/4621/",
+    "soundbanks": "https://www.sounds-resource.com/pc_computer/wormsarmageddon/sound/4730/",
+    "music_gamerip": "https://downloads.khinsider.com/game-soundtracks/album/worms-armageddon-pc-gamerip",
+    "extract_from_owned_copy": "DATA/Gfx/*.dir via SpriteEddy (worms2d.info/SpriteEddy) - see ASSETS.md Path B"
+  },
+  "images": {
+    "images/menu/background.png": "/absolute/path/to/your/menu_background.png"
+  },
+  "sounds": {
+    "sounds/explosion1.wav": "/absolute/path/to/your/Explosion1.wav",
+    "sounds/StartRound.wav": "/absolute/path/to/your/StartRound.wav",
+    "sounds/Speech/Irish/incoming.wav": "/absolute/path/to/your/incoming.wav"
+  },
+  "music": {
+    "music/menu.ogg": "/absolute/path/to/your/menu_theme.ogg"
+  }
+}

@@ -76,26 +76,44 @@ class Sound
 class SoundFallback extends Sound
 {
     audio: HTMLAudioElement;
+    counted;
 
     constructor(soundSrc)
     {
-        super(soundSrc);  
+        super(soundSrc);
         this.load(soundSrc);
     }
 
     load(soundSrc)
     {
+        // Count this sound exactly once toward the asset loader, whether it
+        // loads or errors. Some engines can fire both loadeddata and error, so
+        // guard against a double-increment (which, with isReady()'s threshold,
+        // could otherwise leave the loader stuck above 100%).
+        this.counted = false;
+        var markCounted = () =>
+        {
+            if (!this.counted)
+            {
+                this.counted = true;
+                AssetManager.numAssetsLoaded++;
+            }
+        };
+
           this.audio = <HTMLAudioElement>document.createElement("Audio");
 
         // When the sound loads sucesfully tell the asset manager
         $(this.audio).on("loadeddata", () =>
         {
-            AssetManager.numAssetsLoaded++;
+            markCounted();
             Logger.log(" Sound loaded " + this.audio.src );
         });
 
         this.audio.onerror = () => {
             Logger.error( " Sound failed to load " + this.audio.src);
+            // Still count it so the asset loader can reach 100% and the game can
+            // start even when an asset pack is missing this sound.
+            markCounted();
         }
 
         this.audio.src = soundSrc;

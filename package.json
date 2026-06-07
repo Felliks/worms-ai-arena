@@ -12,6 +12,7 @@
     "build": "npm run build:legacy && tsc -p tsconfig.node.json",
     "build:legacy": "tsx scripts/build-legacy.ts",
     "fetch:assets": "tsx scripts/fetch-legacy-assets.ts",
+    "fetch:assets:original": "tsx scripts/fetch-assets.ts",
     "typecheck": "tsc -p tsconfig.node.json --noEmit",
     "test": "vitest run --passWithNoTests",
     "qa:browser": "tsx scripts/browser-qa.ts"
@@ -41,7 +42,9 @@
   "devDependencies": {
     "@types/express": "^5.0.6",
     "@types/node": "^25.9.2",
+    "@types/pngjs": "^6.0.5",
     "playwright": "^1.60.0",
+    "pngjs": "^7.0.0",
     "tsx": "^4.22.4",
     "typescript": "^6.0.3",
     "vitest": "^4.1.8"

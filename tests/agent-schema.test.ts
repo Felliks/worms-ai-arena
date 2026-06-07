@@ -1,3 +1,5 @@
+import fs from "node:fs";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   AgentDecisionSchema,
@@ -148,8 +150,7 @@ describe("agent decision schema", () => {
       campaignPlan: "Travel right across the lower shelf toward Alan Kay; if the wall blocks me, open it with a safe bazooka demolition shot next turn.",
       nextTurnPlan: "Continue right unless water appears; use jump or jetpack if the ledge blocks walking.",
       actions: [
-        { tool: "walk", direction: "right", steps: 140 },
-        { tool: "end_turn" }
+        { tool: "walk", direction: "right", steps: 140 }
       ]
     });
 
@@ -170,8 +171,7 @@ describe("agent decision normalization", () => {
         { tool: "select_weapon", weapon: "Bazooka" },
         { tool: "aim", degrees: -35 },
         { tool: "set_power", percent: 70 },
-        { tool: "fire", observeMs: 7000 },
-        { tool: "end_turn" }
+        { tool: "fire", observeMs: 7000 }
       ]
     });
 
@@ -189,11 +189,6 @@ describe("agent decision normalization", () => {
     expect(normalized.actions[5]).toMatchObject({
       tool: "fire",
       observeMs: 7000
-    });
-    expect(normalized.actions[6]).toMatchObject({
-      tool: "end_turn",
-      text: null,
-      observeMs: null
     });
   });
 });
@@ -292,7 +287,7 @@ describe("createAgent turn context", () => {
     expect(prompt).toContain("Use only this language; no translations or bilingual duplicates");
   });
 
-  it("turns ally damage history into an explicit grudge ledger and drama obligation", () => {
+  it("turns ally damage history into an explicit grudge ledger and drama cues", () => {
     const prompt = buildPromptText({
       ...request,
       wormProfileMarkdown: "## Worm profile\n- Personality: patient survivor.",
@@ -307,18 +302,21 @@ describe("createAgent turn context", () => {
     expect(prompt).toContain("Phil Katz");
     expect(prompt).toContain("21.2");
     expect(prompt).toContain("patient survivor");
-    expect(prompt).toContain("Visible drama obligation");
-    expect(prompt).toContain("mention the ally betrayal");
+    expect(prompt).toContain("Visible drama cues");
+    expect(prompt).toContain("ally betrayal is strong material");
   });
 
-  it("makes safe repositioning and end_turn attractive when explosive fire is unsafe", () => {
+  it("describes fire risk without turning mobility into the default answer", () => {
     const prompt = buildPromptText(request);
 
-    expect(prompt).toContain("## Fire discipline policy");
+    expect(prompt).toContain("## Fire risk checklist");
     expect(prompt).toContain("A skipped shot is better than a meaningless self-hit");
     expect(prompt).toContain("under about 180 px");
-    expect(prompt).toContain("Prefer walk, jump, backflip, wait, or end_turn");
+    expect(prompt).toContain("Facts to consider before explosive fire");
     expect(prompt).toContain("point-blank explosive fire into nearby terrain");
+    expect(prompt).not.toContain("Prefer walk, jump, backflip, wait, or end_turn");
+    expect(prompt).not.toContain("prefer closing distance");
+    expect(prompt).not.toContain("movement is the default tactical action");
   });
 
   it("exposes real jetpack and ninja rope primitives instead of treating them as MVP placeholders", () => {
@@ -330,34 +328,45 @@ describe("createAgent turn context", () => {
     expect(prompt).toContain("rope_swing");
     expect(prompt).toContain("rope_contract");
     expect(prompt).toContain("rope_release");
-    expect(prompt).toContain("continue the same travel plan");
+    expect(prompt).toContain("manual low-level mobility primitives");
+    expect(prompt).toContain("screen-relative directions");
+    expect(prompt).toContain("consumes one Jet Pack ammo");
+    expect(prompt).toContain("There is no voluntary end-turn tool");
     expect(prompt).not.toContain("no dedicated agent piloting primitive yet");
     expect(prompt).not.toContain("fire may waste the turn");
+    expect(prompt).not.toContain("Use them when no sane shot exists");
   });
 
-  it("pushes long-term travel plans and substantial movement when no sane shot exists", () => {
+  it("keeps campaign plans as memory fields without hardcoded travel strategy", () => {
     const prompt = buildPromptText(request);
 
-    expect(prompt).toContain("## Long-term campaign plan");
+    expect(prompt).toContain("## Planning memory fields");
     expect(prompt).toContain("campaignPlan");
     expect(prompt).toContain("nextTurnPlan");
-    expect(prompt).toContain("40-120");
-    expect(prompt).toContain("terrain-opening shot for the next turn");
+    expect(prompt).toContain("They are memory, not orders");
+    expect(prompt).not.toContain("40-120");
+    expect(prompt).not.toContain("terrain-opening shot for the next turn");
+    expect(prompt).not.toContain("prefer meaningful travel");
   });
 
   it("tells createAgent when it is continuing the same physical worm turn", () => {
     const prompt = buildPromptText({
       ...request,
       sameTurnBatch: 3,
-      maxSameTurnBatches: 4
+      maxSameTurnBatches: 4,
+      turnTimeRemainingMs: 93000
     });
 
-    expect(prompt).toContain("Same physical worm-turn batch: 3 of 4");
+    expect(prompt).toContain("Same physical worm-turn batch: 3.");
+    expect(prompt).toContain("Physical worm-turn time remaining: 93 seconds");
+    expect(prompt).toContain("no voluntary end-turn/pass tool");
     expect(prompt).toContain("Continuation warning");
-    expect(prompt).toContain("include `fire` if prepared or `end_turn`");
+    expect(prompt).toContain("Use the fresh feedback");
+    expect(prompt).toContain("do not repeat a failed mobility primitive");
+    expect(prompt).not.toContain("include `fire` if prepared or `end_turn`");
   });
 
-  it("exposes submit_worms_turn as the return-direct final tool", async () => {
+  it("exposes submit_worms_turn as the return-direct final tool and maps removed end_turn to wait", async () => {
     let submitted: unknown = null;
     const tools = createArenaTools(request, (decision) => {
       submitted = decision;
@@ -368,7 +377,7 @@ describe("createAgent turn context", () => {
     expect(submitTool.returnDirect).toBe(true);
 
     const result = await submitTool.invoke({
-      thought: "Use memory, then stop safely.",
+      thought: "Use memory, then wait briefly.",
       trashTalk: "Помню прошлый провал.",
       actions: [{ tool: "end_turn" }]
     });
@@ -379,9 +388,16 @@ describe("createAgent turn context", () => {
       trashTalk: "Помню прошлый провал.",
       actions: [
         { tool: "say", text: "Помню прошлый провал." },
-        { tool: "end_turn", text: null }
+        { tool: "wait", text: null, ms: null }
       ]
     });
+  });
+
+  it("does not force a first tool call by default so createAgent can choose its ReAct order", () => {
+    const source = fs.readFileSync(path.join(process.cwd(), "server", "agent.ts"), "utf8");
+
+    expect(source).toContain('process.env.AGENT_FORCE_FIRST_WORLD_SURVEY ?? "false"');
+    expect(source).not.toContain('process.env.AGENT_FORCE_FIRST_WORLD_SURVEY ?? "true"');
   });
 
   it("accepts verbose model plans without failing tool schema validation", async () => {
@@ -395,7 +411,7 @@ describe("createAgent turn context", () => {
     const result = await submitTool.invoke({
       thought: longThought,
       trashTalk: "Слишком много думаю, всё равно прыгаю.",
-      actions: [{ tool: "jump" }, { tool: "end_turn" }]
+      actions: [{ tool: "jump" }, { tool: "wait", ms: 500 }]
     });
 
     expect(JSON.parse(String(result)).accepted).toBe(true);
@@ -403,7 +419,7 @@ describe("createAgent turn context", () => {
     expect(submitted.actions).toMatchObject([
       { tool: "say", text: "Слишком много думаю, всё равно прыгаю." },
       { tool: "jump" },
-      { tool: "end_turn" }
+      { tool: "wait", ms: 500 }
     ]);
   });
 
@@ -453,7 +469,30 @@ describe("createAgent turn context", () => {
     expect(submitted.trashTalk).toBe("Слишком предсказуемо. Сейчас найду вас.");
     expect(submitted.actions).toMatchObject([
       { tool: "say", text: "Вот и получите!" },
-      { tool: "end_turn" }
+      { tool: "wait" }
+    ]);
+  });
+
+  it("strips English translation parentheticals from non-English visible chat", async () => {
+    let submitted: any = null;
+    const tools = createArenaTools(request, (decision) => {
+      submitted = decision;
+    });
+    const submitTool = tools.find((agentTool: any) => agentTool.name === "submit_worms_turn") as any;
+
+    await submitTool.invoke({
+      thought: "Keep Russian chat clean.",
+      trashTalk: "Позиция закрыта. (Position is blocked.)",
+      actions: [
+        { tool: "say", text: "Ухожу вправо. (Moving right.)" },
+        { tool: "walk", direction: "right", steps: 60 }
+      ]
+    });
+
+    expect(submitted.trashTalk).toBe("Позиция закрыта.");
+    expect(submitted.actions).toMatchObject([
+      { tool: "say", text: "Ухожу вправо." },
+      { tool: "walk", direction: "right", steps: 60 }
     ]);
   });
 });

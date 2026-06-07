@@ -267,41 +267,41 @@ module ArenaSnapshot
         var name = String(weapon.name || "");
         if (name == "Shotgun")
         {
-            return "tactical use: straight ray weapon with up to two shots before turn ends; best when line/aim clearance is actually open; risk: wastes shots into terrain if blocked; agent primitives: aim, fire, optionally aim again and fire again.";
+            return "tactical use facts: straight ray weapon with up to two shots before turn ends; needs line/aim clearance to matter; risk: wastes shots into terrain if blocked; agent primitives: aim, fire, optionally aim again and fire again.";
         }
         if (name == "Hand Grenade")
         {
-            return "tactical use: thrown explosive with 4 sec fuse and bounce; best when an arc or drop can reach a target behind terrain; risk: short throws and nearby walls cause self/friendly splash; agent primitives: aim, set_power, fire, observeMs 6500-9000.";
+            return "tactical use facts: thrown explosive with 4 sec fuse and bounce; can arc/drop and bounce; risk: short throws and nearby walls cause self/friendly splash; agent primitives: aim, set_power, fire, observeMs 6500-9000.";
         }
         if (name == "Holy Grenade")
         {
-            return "tactical use: large high-damage thrown explosive with longer fuse; best for clustered enemies or terrain pockets at a safe distance; risk: very large blast makes friendly/self damage likely near allies or close walls; agent primitives: aim, set_power, fire, observeMs 8000-9000.";
+            return "tactical use facts: large high-damage thrown explosive with longer fuse; large blast affects clusters and terrain pockets; risk: very large blast makes friendly/self damage likely near allies or close walls; agent primitives: aim, set_power, fire, observeMs 8000-9000.";
         }
         if (name == "Dynamite")
         {
-            return "tactical use: places explosive at current worm position; best only when standing beside an enemy and able to escape/accept risk; risk: nearly guaranteed self-damage if used alone or while trapped; agent primitives: select_weapon, fire, then movement is risky because fuse is short.";
+            return "tactical use facts: places explosive at current worm position; risk: nearly guaranteed self-damage if used alone or while trapped; agent primitives: select_weapon, fire, then movement is risky because fuse is short.";
         }
         if (name == "Jet Pack")
         {
-            return "tactical use: manual flight/repositioning over gaps, water danger, and walls; best when no sane shot exists or continuing travel toward enemies; risk: fuel waste, ceiling impacts, water falls; agent primitives: jetpack_start, jetpack_thrust direction up/left/right/up_left/up_right with ms, jetpack_stop.";
+            return "tactical use facts: manual flight/repositioning over gaps, water danger, and walls; activation consumes one Jet Pack ammo and starts finite fuel; thrust is screen-relative: up decreases y, left decreases x, right increases x; feedback reports dx/dy and fuel; risk: fuel waste, ceiling impacts, water falls; agent primitives: jetpack_start, jetpack_thrust direction up/left/right/up_left/up_right with ms, jetpack_stop.";
         }
         if (name == "Minigun")
         {
-            return "tactical use: short burst ray weapon ending the turn; best when a straight lane is open and explosive splash is too risky; risk: digs terrain/whiffs if line is blocked; agent primitives: aim, fire.";
+            return "tactical use facts: short burst ray weapon ending the turn; needs a straight lane; risk: digs terrain/whiffs if line is blocked; agent primitives: aim, fire.";
         }
         if (name == "Ninja Rope")
         {
-            return "tactical use: manual rope movement using current aim to hook overhead/side terrain; best for crossing gaps, climbing, or swinging to a new firing position; risk: misses if aimed into empty sky, bad release can drop into water; agent primitives: aim, rope_fire, rope_contract/rope_expand, rope_swing left/right with ms, rope_release.";
+            return "tactical use facts: manual rope movement using current aim to hook overhead/side terrain; feedback says attached/no anchor and reports movement; risk: misses if aimed into empty sky, bad release can drop into water; agent primitives: aim, rope_fire, rope_contract/rope_expand, rope_swing left/right with ms, rope_release.";
         }
         if (name == "Drill")
         {
-            return "tactical use: drills terrain downward around the worm for repositioning or digging out; best when trapped or needing a non-explosive way through nearby ground; risk: can drop you toward water or waste turn if used in open air; agent primitives: select_weapon, fire, wait/observe.";
+            return "tactical use facts: drills terrain downward around the worm for repositioning or digging out; risk: can drop you toward water or waste turn if used in open air; agent primitives: select_weapon, fire, wait/observe.";
         }
         if (name == "Bazooka")
         {
-            return "tactical use: direct projectile explosive with immediate terrain contact detonation; best when muzzle has safe clearance and target direction is open enough; risk: close wall/ground impacts cause self-hit; agent primitives: aim, set_power, fire, observeMs 6500-9000.";
+            return "tactical use facts: direct projectile explosive with immediate terrain contact detonation; needs muzzle clearance and open direction to avoid instant wall hit; risk: close wall/ground impacts cause self-hit; agent primitives: aim, set_power, fire, observeMs 6500-9000.";
         }
-        return "tactical use: unknown inventory item; inspect current state and avoid using it if the primitive is unclear.";
+        return "tactical use facts: unknown inventory item; inspect current state and avoid using it if the primitive is unclear.";
     }
 
     function weaponInfo(weapon)
@@ -315,11 +315,11 @@ module ArenaSnapshot
         var lowerName = String(weapon.name || "").toLowerCase();
         if (lowerName == "jet pack")
         {
-            parts.push("mobility tool: use `jetpack_start`, `jetpack_thrust`, and `jetpack_stop` for manual low-level flight");
+            parts.push("mobility tool facts: `jetpack_start`, `jetpack_thrust`, and `jetpack_stop`; activation consumes ammo, thrust consumes fuel, feedback reports movement/fuel");
         }
         if (lowerName == "ninja rope")
         {
-            parts.push("mobility tool: aim first, then use `rope_fire`, `rope_contract`/`rope_expand`, `rope_swing`, and `rope_release`");
+            parts.push("mobility tool facts: aim first, then use `rope_fire`, `rope_contract`/`rope_expand`, `rope_swing`, and `rope_release`; feedback reports attached/no anchor and movement");
         }
 
         if (typeof weapon.explosionRadius == "number")
@@ -614,11 +614,11 @@ module ArenaSnapshot
         }
 
         markdown += "## Action primitives\n\n";
-        markdown += "Return a batch of low-level actions only. Available tools: `say`, `inspect_inventory`, `select_weapon`, `walk`, `jump`, `backflip`, `aim`, `aim_delta`, `set_power`, `fire`, `wait`, `end_turn`, `jetpack_start`, `jetpack_thrust`, `jetpack_stop`, `rope_fire`, `rope_swing`, `rope_contract`, `rope_expand`, `rope_release`.\n";
-        markdown += "`end_turn` voluntarily passes control to the next worm/team. Use it after repositioning if you do not want another same-turn decision.\n";
-        markdown += "`walk` accepts 1-160 primitive steps. Use 40-120 for purposeful travel when terrain is not immediately dangerous; use 5-15 only for fine positioning.\n";
-        markdown += "`Jet Pack` and `Ninja Rope` are manual low-level mobility tools now. Jetpack directions: `up`, `left`, `right`, `up_left`, `up_right`. Rope: aim, fire, contract/expand, `rope_swing` left/right, release.\n";
-        markdown += "If no sane shot exists, continue the same travel plan toward useful terrain or an enemy instead of shooting water/terrain/empty sky. If a wall blocks travel and mobility cannot solve it, a safe Bazooka terrain-opening shot for the next turn is allowed.\n";
+        markdown += "Return a batch of low-level actions only. Available tools: `say`, `inspect_inventory`, `select_weapon`, `walk`, `jump`, `backflip`, `aim`, `aim_delta`, `set_power`, `fire`, `wait`, `jetpack_start`, `jetpack_thrust`, `jetpack_stop`, `rope_fire`, `rope_swing`, `rope_contract`, `rope_expand`, `rope_release`.\n";
+        markdown += "There is no voluntary end-turn/pass tool. The game ends this worm turn through shot resolution, death, water, mine/physics turn change, or timer expiration. If control remains, the same worm receives fresh feedback while time remains.\n";
+        markdown += "`walk` accepts 1-160 primitive steps. Small counts are short key holds; large counts are longer key holds. Terrain may block actual movement; feedback reports dx/dy.\n";
+        markdown += "`Jet Pack` and `Ninja Rope` are manual low-level mobility tools. Jetpack screen-relative directions: `up` decreases y, `left` decreases x, `right` increases x, `up_left`, `up_right`. Rope: aim, fire, contract/expand, `rope_swing` left/right, release.\n";
+        markdown += "No inventory item is a default move. Inputs for your own action mix: current state, personal memory, inventory, and feedback.\n";
         markdown += "No `move_to`, no computed trajectory helper, no autopilot.\n";
 
         return markdown;

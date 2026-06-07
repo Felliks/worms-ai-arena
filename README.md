@@ -15,6 +15,14 @@ npm run fetch:assets
 npm run dev
 ```
 
+Game assets
+=====
+
+This repo ships **no** Worms art/sound/music (copyright Team17). The game runs on
+bundled placeholders and degrades gracefully. To install an authentic original
+asset pack **locally** (never committed) and switch to it with `?assetPack=original`,
+see [ASSETS.md](ASSETS.md) and `npm run fetch:assets:original`.
+
 Open:
 
 * Haiku vs Sonnet: `http://127.0.0.1:8787/?arena=llm-vs-llm&models=claude-haiku-4-5-20251001,claude-sonnet-4-6&turnTime=120`

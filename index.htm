@@ -8,6 +8,7 @@
     <title>Worms Armageddon HTML5 Clone</title>
     <link rel="stylesheet" href="css/bootstrap.min.css" type="text/css" />
     <link rel="stylesheet" href="css/custom.css" type="text/css" />
+    <link rel="stylesheet" href="css/menu.css" type="text/css" />
 
     <!-- External deps -->
     <script src="external/jquery.1.8.2.min.js"></script>
@@ -69,30 +70,18 @@
     </div>
     <div id="turnTimeCounter" style="display: none"></div>
 
-    <div class="hero-unit" id="startMenu">
-        <div class="slide">
-            <h1 style="text-align: center">Worms Armageddon HTML5 Clone</h1>
-            <br />
-            <p>
-                Welcome to a recreation of <a href="http://www.team17.com/">Team17's</a> turn-based artillery strategy worms armageddon. 
-                All copyright and credit for the art/sound assets belongs to <a href="http://www.team17.com/">Team17</a>
-                and for making such an awesome game in the first place. This clone is currently under development by <a href="http://www.ciaranmccann.me/">Ciarán McCann</a> as part of his final year on the <a href="http://www.itcarlow.ie/study-at-itc/science/computing-networking/cw208.htm">IT Carlow Games Development</a> course.
-                <a href="http://www.ciaranmccann.me/">Read more..</a>
-            </p>
-            <br />
-
-            <p style="text-align: center">
-
-                <a class="btn btn-primary btn-large" id="startTutorial" disabled="disabled">Noobs tutorial</a>
-                <a class="btn btn-primary btn-large" id="startLocal" disabled="disabled">Local two player</a>
-                <a class="btn btn-primary btn-large" id="startOnline" disabled="disabled">Online multiplayer</a>
-                <a class="btn btn-primary btn-large" href="?arena=llm-vs-llm">LLM Arena</a>
-                <a class="btn btn-primary btn-large" href="?arena=human-vs-llm">Human vs LLM</a>
-            </p>
-            <div id="notice" style="font-size: 14px"></div>
-            <div class="healthMenu">
-                <ul></ul>
-            </div>
+    <!-- Themed loading splash. Once assets are ready, StartMenu hands off to the
+         MainMenu overlay (and removes this element). #notice hosts the loading bar. -->
+    <div id="startMenu" class="wa-splash">
+        <div class="wa-splash-logo">
+            <span class="wa-splash-main">WORMS</span>
+            <span class="wa-splash-sub">A.I. ARENA</span>
+        </div>
+        <div class="wa-splash-tagline">Turn-based artillery. LLMs at the trigger.</div>
+        <div id="notice" style="font-size: 14px"></div>
+        <div class="slide" style="display:none"></div>
+        <div class="healthMenu" style="display:none">
+            <ul></ul>
         </div>
     </div>
 </body>

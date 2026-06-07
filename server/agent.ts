@@ -23,7 +23,6 @@ const ACTION_TOOLS = [
   "set_power",
   "fire",
   "wait",
-  "end_turn",
   "jetpack_start",
   "jetpack_thrust",
   "jetpack_stop",
@@ -76,7 +75,7 @@ const AgentDecisionSchema = z.object({
   trashTalk: z.string().max(300),
   target: z.string().max(120).nullable().default(null),
   campaignPlan: z.string().max(800).default("No explicit multi-turn campaign plan supplied; infer from thought and current position."),
-  nextTurnPlan: z.string().max(500).default("Next turn should reassess the current position, continue useful movement, or take a sane shot if one opens."),
+  nextTurnPlan: z.string().max(500).default("Next turn should reassess current state, inventory, feedback, and memory before choosing primitives."),
   modelUsed: z.string().optional(),
   actions: z.array(ActionSchema).min(1).max(10)
 });
@@ -90,6 +89,11 @@ const AgentTurnRequestSchema = z.object({
   personality: z.string(),
   chatLanguage: z.string().optional(),
   model: z.string().optional(),
+  // Optional per-request connection overrides (UI connection cascade). When a
+  // baseURL is supplied the request owns the connection; otherwise env is used.
+  // This is connection plumbing only - prompt/tools/decision logic are unchanged.
+  baseURL: z.string().optional(),
+  apiKey: z.string().optional(),
   perception: z.enum(["text", "text+vision"]),
   snapshotMarkdown: z.string(),
   feedbackMarkdown: z.string().optional(),
@@ -105,7 +109,8 @@ const AgentTurnRequestSchema = z.object({
   memoryStrategy: z.enum(["none", "sliding", "summary", "full"]).optional(),
   memoryWindow: z.number().int().min(0).max(200).optional(),
   sameTurnBatch: z.number().int().min(1).optional(),
-  maxSameTurnBatches: z.number().int().min(1).optional()
+  maxSameTurnBatches: z.number().int().min(1).optional(),
+  turnTimeRemainingMs: z.number().int().min(0).optional()
 });
 
 type AgentTurnRequest = z.infer<typeof AgentTurnRequestSchema>;
@@ -145,13 +150,13 @@ Before submitting a turn, use tools to inspect the world in a practical order:
 - Write visible chat and trash talk only in the requested chat language. Do not add translations, bilingual parentheticals, or English duplicates unless the requested language is English. Proper names may stay unchanged. Keep tool names and structured action fields in English.
 </anti_cheat_rules>
 
-<grudge_and_drama_rules>
+<grudge_and_drama_cheatsheet>
 The Grudge ledger in the turn prompt is active tactical context, not flavor text.
-If an ally damaged you, treat it as a memorable betrayal: mention it in your public plan and usually in one concise say line. You may refuse a risky shot, delay revenge, distrust that ally, or choose a safer move because of it.
-If an enemy damaged you, it may bias target preference, but do not take suicidal shots just to answer it.
-If you damaged yourself last turn, remember the embarrassment and play more carefully for at least the next turn.
-Your personality controls the style of reaction: chaos comedian jokes, patient survivor stores debts coldly, reckless duelist escalates when survivable, terrain reader cites the mistake precisely, defensive survivor prioritizes safety while keeping score.
-</grudge_and_drama_rules>
+Ally damage is a high-drama betrayal cue: it can change trust, timing, target preference, or visible trash talk.
+Enemy damage is pressure context: it can bias target preference, but it is not a forced target lock.
+Self-damage is embarrassment context: it can affect caution and jokes without forbidding bold plays.
+Personality controls the style of reaction: chaos comedian jokes, patient survivor stores debts coldly, reckless duelist escalates when survivable, terrain reader cites the mistake precisely, defensive survivor prioritizes safety while keeping score.
+</grudge_and_drama_cheatsheet>
 
 <coordinate_cheatsheet>
 Canvas coordinates: x increases right, y increases downward.
@@ -162,47 +167,44 @@ If a target has dy < 0 it is above you. If dy > 0 it is below you.
 
 <safety_guidelines>
 Friendly fire and self-damage are allowed by the game but usually bad.
-Before firing explosive weapons, check whether the active worm or allies are close to likely impact areas or directly in front of the muzzle.
-If the shot is blocked and close allies are nearby, consider moving, jumping, jetpack, rope, drilling, waiting, or using a safer weapon instead of blasting your own team.
-If aim clearance says terrain/boundary is under about 180 px in the intended muzzle direction, treat explosive fire as a likely self-hit unless you deliberately want a suicide shot.
-If the aim clearance fan says "DANGER FLAG: no sampled aim lane has 180+ px", do not fire Bazooka/Grenade/Holy Grenade/Dynamite from the current position as a default move. Prefer movement, jump/backflip, drill, Jet Pack, Ninja Rope, wait, or a ray weapon only if the line is actually clear.
-If terrain profile says walls/ledges are very close on both sides, do not assume an arced grenade can safely leave the pocket; use the clearance fan and consider movement, rope, jetpack, drill, or a safer low-risk action.
-Before firing explosive weapons, read the blast and friendly-fire map. If an ally is below you in the same side/corridor, or an enemy is close to an ally, prefer movement, a safer target, or a non-explosive/ray weapon unless the risk is intentional.
-A skipped shot with end_turn is better content than repetitive self-damage. If no sane shot exists, reposition, wait, or end_turn while saying why.
+Facts to consider before explosive fire: active worm distance to muzzle terrain, ally positions near likely impact areas, current weapon blast radius, and whether terrain blocks the line near the worm.
+If aim clearance says terrain/boundary is under about 180 px in the intended muzzle direction, treat explosive fire as a likely self-hit unless you deliberately accept that risk.
+If the aim clearance fan says "DANGER FLAG: no sampled aim lane has 180+ px", direct explosive fire from the current position is high risk. This is a risk signal, not an order to choose a specific fallback.
+If terrain profile says walls/ledges are very close on both sides, do not assume an arced grenade can safely leave the pocket; use the clearance fan and your own judgment.
+Before firing explosive weapons, read the blast and friendly-fire map. If an ally is below you in the same side/corridor, or an enemy is close to an ally, account for that risk in your plan.
+A skipped shot is better than a meaningless self-hit or ally splash. point-blank explosive fire into nearby terrain is a shame event, not a default move.
 For grenade/bazooka shots, use observeMs around 6500-9000 if you want feedback after the explosion.
-If you choose only non-turn-ending actions such as walk, jump, aim, jetpack, rope, wait, or select_weapon, the engine may call you again in the same worm turn with fresh feedback. If you intentionally want to stop after repositioning, include end_turn as the last action.
-Use at most one say action in a single action batch. If you are called again in the same physical worm turn, your previous batch did not finish the turn; do not keep chatting or making cosmetic setup moves. Prefer firing if prepared, or call end_turn if the shot is not worth it.
+If you choose only non-turn-ending actions such as walk, jump, aim, jetpack, rope, wait, or select_weapon, the engine may call you again in the same worm turn with fresh feedback while time remains.
+There is no voluntary pass/end-turn action. The game ends this worm's turn through shot resolution, death, water, mine/physics turn change, or timer expiration.
+Use at most one say action in a single action batch. If you are called again in the same physical worm turn, use the fresh feedback and do not repeat a failed mobility primitive or failed setup without a new reason.
 </safety_guidelines>
 
 <action_primitives>
 - say: visible chat line.
 - inspect_inventory: engine-side inventory check during the game turn.
 - select_weapon: weapon name or inventory index.
-- walk: direction plus primitive step count. Use 40-120 steps for purposeful travel on open ground; use 5-15 only for fine adjustment near cliffs, mines, allies, or walls.
+- walk: direction plus primitive step count from 1-160. Smaller counts are short key holds; larger counts are longer key holds. Terrain can block actual movement; feedback reports dx/dy.
 - jump / backflip: movement primitives.
 - aim / aim_delta: absolute or relative angle control.
 - set_power: shot force percentage.
 - fire: shoot and observe result.
-- jetpack_start: select and activate Jet Pack.
-- jetpack_thrust: low-level Jet Pack thrust; direction is up, left, right, up_left, or up_right; ms is duration.
+- jetpack_start: select and activate Jet Pack; successful activation consumes one Jet Pack ammo and starts a finite fuel pool.
+- jetpack_thrust: low-level Jet Pack thrust; screen-relative directions are up, left, right, up_left, or up_right; up decreases y, left decreases x, right increases x; ms is duration.
 - jetpack_stop: deactivate Jet Pack to land or conserve fuel.
-- rope_fire: select and fire Ninja Rope along your current aim.
+- rope_fire: select and fire Ninja Rope along your current aim; feedback says whether it attached and where the anchor was.
 - rope_swing: while Ninja Rope is attached, hold left/right movement for ms duration to swing manually.
 - rope_contract / rope_expand: shorten or lengthen an attached Ninja Rope for ms duration.
 - rope_release: detach Ninja Rope.
 - wait: spend a small amount of turn time.
-- end_turn: voluntarily end the current worm turn after you are done moving/acting.
 </action_primitives>
 
-<mobility_tool_rules>
-Jet Pack and Ninja Rope are real low-level mobility tools now.
-Use them when no sane shot exists, when water or a wall blocks walking, or when you need to continue the same travel plan from prior turns.
-When walking is the chosen plan and terrain is not immediately dangerous, move like a player trying to reach a future shot: one walk of 40-120 steps is usually better than 5-10 cosmetic steps.
-If a wall blocks the travel plan, use low-level jump/backflip/rope/jetpack/drill, or make a deliberate safe Bazooka terrain-opening shot for the next turn. Do not shoot terrain randomly; state the demolition purpose in the plan.
-Jet Pack sequence example shape: jetpack_start, one or more jetpack_thrust actions, jetpack_stop, then optionally walk/aim/end_turn.
-Ninja Rope sequence example shape: aim toward ceiling/terrain, rope_fire, rope_contract or rope_expand, rope_swing left/right, rope_release.
-These are not autopilot commands. You choose direction, duration, aim, and risk yourself and can crash, fall, or waste fuel.
-</mobility_tool_rules>
+<inventory_cheatsheet_rules>
+No inventory item is a default move. Treat weapon and mobility descriptions as facts about cost, risk, and available primitives, not as orders.
+inspect_inventory gives current weapon, ammo, and primitive notes. Pick a tool from the current map state, memory, inventory, and feedback.
+Jet Pack and Ninja Rope are manual low-level mobility primitives. They are not pathfinding, route solving, or guaranteed escape.
+Mobile primitives do not finish the turn by themselves. After movement, either continue the same action batch or receive fresh same-worm feedback while time remains.
+Read movement feedback such as dx/dy, fuel, rope attached/no anchor, and new position before repeating a mobility primitive. Screen-relative direction facts are in the coordinate cheatsheet.
+</inventory_cheatsheet_rules>
 
 <final_output>
 Call submit_worms_turn once with target, campaignPlan, nextTurnPlan, and 1-10 primitive actions. Action objects may omit irrelevant fields; the engine will normalize missing fields to null.
@@ -271,6 +273,23 @@ function cleanVisibleText(value: string | null | undefined, maxLength: number): 
   return clipText(text, maxLength);
 }
 
+function isEnglishChatLanguage(language?: string): boolean {
+  return !language || /^(en|eng|english)$/i.test(String(language).trim());
+}
+
+function cleanVisibleChatText(value: string | null | undefined, maxLength: number, language?: string): string | null {
+  const cleaned = cleanVisibleText(value, maxLength);
+  if (!cleaned || isEnglishChatLanguage(language)) {
+    return cleaned;
+  }
+
+  const withoutLatinTranslations = cleaned
+    .replace(/[\s\u00a0]*[\(\[（]\s*[A-Za-z][A-Za-z0-9 ,.'’"?!:;—-]{7,}\s*[\)\]）]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  return clipText(withoutLatinTranslations, maxLength);
+}
+
 function normalizeNumber(value: unknown, min: number, max: number, integer = false): number | null {
   if (value == null || value === "") {
     return null;
@@ -317,9 +336,9 @@ function fallbackTrashTalk(language?: string): string {
   return "";
 }
 
-function normalizeAction(input: z.infer<typeof RawActionSchema>): z.infer<typeof ActionSchema> {
+function normalizeAction(input: z.infer<typeof RawActionSchema>, request?: AgentTurnRequest): z.infer<typeof ActionSchema> {
   return action(normalizeToolName(input.tool), {
-    text: cleanVisibleText(input.text == null ? null : String(input.text), 240),
+    text: cleanVisibleChatText(input.text == null ? null : String(input.text), 240, request?.chatLanguage),
     weapon: input.weapon == null ? null : String(input.weapon),
     index: normalizeNumber(input.index, 0, 20, true),
     direction: normalizeDirection(input.direction),
@@ -333,9 +352,9 @@ function normalizeAction(input: z.infer<typeof RawActionSchema>): z.infer<typeof
 
 function normalizeDecision(decision: unknown, request?: AgentTurnRequest): AgentDecision {
   const parsed = RawAgentDecisionSchema.parse(decision);
-  const actions = parsed.actions.slice(0, 10).map(normalizeAction);
+  const actions = parsed.actions.slice(0, 10).map((agentAction) => normalizeAction(agentAction, request));
   const rawTrashTalk = parsed.trashTalk == null ? fallbackTrashTalk(request?.chatLanguage) : String(parsed.trashTalk);
-  const trashTalk = cleanVisibleText(rawTrashTalk, 300) || "";
+  const trashTalk = cleanVisibleChatText(rawTrashTalk, 300, request?.chatLanguage) || "";
   if (trashTalk && actions.length < 10) {
     const alreadyHasSay = actions.some((agentAction) => agentAction.tool === "say");
     const normalizedTrashTalk = trashTalk.trim().toLowerCase();
@@ -353,7 +372,7 @@ function normalizeDecision(decision: unknown, request?: AgentTurnRequest): Agent
     trashTalk,
     target: parsed.target == null ? null : cleanVisibleText(String(parsed.target), 120),
     campaignPlan: parsed.campaignPlan == null ? "No explicit multi-turn campaign plan supplied; infer from thought and current position." : cleanVisibleText(String(parsed.campaignPlan), 800),
-    nextTurnPlan: parsed.nextTurnPlan == null ? "Next turn should reassess the current position, continue useful movement, or take a sane shot if one opens." : cleanVisibleText(String(parsed.nextTurnPlan), 500),
+    nextTurnPlan: parsed.nextTurnPlan == null ? "Next turn should reassess current state, inventory, feedback, and memory before choosing primitives." : cleanVisibleText(String(parsed.nextTurnPlan), 500),
     actions
   });
 }
@@ -406,14 +425,19 @@ function mockDecision(request: AgentTurnRequest): AgentDecision {
   };
 }
 
-function getOpenAIApiKey(): string | undefined {
-  return getOpenAIBaseURL()
-    ? process.env.API_KEY || process.env.OPENAI_API_KEY
-    : process.env.OPENAI_API_KEY || process.env.API_KEY;
+interface ConnectionOverride {
+  baseURL?: string;
+  apiKey?: string;
 }
 
-function getOpenAIBaseURL(): string | undefined {
-  const raw = process.env.OPENAI_BASE_URL || process.env.BASE_URL || process.env.API_URL;
+function requestHasConnection(request?: ConnectionOverride): boolean {
+  return Boolean(request && typeof request.baseURL === "string" && request.baseURL.trim());
+}
+
+function getOpenAIBaseURL(request?: ConnectionOverride): string | undefined {
+  const raw = requestHasConnection(request)
+    ? (request as ConnectionOverride).baseURL!.trim()
+    : (process.env.OPENAI_BASE_URL || process.env.BASE_URL || process.env.API_URL);
   if (!raw) {
     return undefined;
   }
@@ -422,30 +446,72 @@ function getOpenAIBaseURL(): string | undefined {
   return trimmed.endsWith("/v1") ? trimmed : `${trimmed}/v1`;
 }
 
-function createOpenAIClient(): OpenAI {
-  const apiKey = getOpenAIApiKey();
+function getOpenAIApiKey(request?: ConnectionOverride): string | undefined {
+  // A per-request connection (UI cascade) takes precedence over env entirely:
+  // when the request supplies a baseURL, its apiKey is authoritative (even if
+  // blank -> undefined -> mock), so a user connection is never silently mixed
+  // with an env key.
+  if (requestHasConnection(request)) {
+    const key = typeof (request as ConnectionOverride).apiKey === "string"
+      ? (request as ConnectionOverride).apiKey!.trim()
+      : "";
+    return key || undefined;
+  }
+
+  if (request && typeof request.apiKey === "string" && request.apiKey.trim()) {
+    return request.apiKey.trim();
+  }
+
+  return getOpenAIBaseURL()
+    ? process.env.API_KEY || process.env.OPENAI_API_KEY
+    : process.env.OPENAI_API_KEY || process.env.API_KEY;
+}
+
+function createOpenAIClient(request?: ConnectionOverride): OpenAI {
+  const apiKey = getOpenAIApiKey(request);
   if (!apiKey) {
-    throw new Error("Missing OpenAI-compatible API key. Set API_KEY or OPENAI_API_KEY.");
+    throw new Error("Missing OpenAI-compatible API key. Set a connection (Base URL + key) in the UI, or API_KEY / OPENAI_API_KEY.");
   }
 
   return new OpenAI({
     apiKey,
-    baseURL: getOpenAIBaseURL()
+    baseURL: getOpenAIBaseURL(request)
   });
 }
 
-async function listOpenAICompatibleModels(): Promise<Array<{ id: string; created?: number }>> {
+function mapModelListPage(page: any): Array<{ id: string; created?: number }> {
+  const data = Array.isArray(page.data) ? page.data : [];
+  return data
+    .map((model: any) => ({ id: String(model.id), created: typeof model.created === "number" ? model.created : undefined }))
+    .filter((model: { id: string; created?: number }) => model.id && !/embed|rerank|moderation|tts|whisper|image|audio/i.test(model.id));
+}
+
+async function listOpenAICompatibleModels(request?: ConnectionOverride): Promise<Array<{ id: string; created?: number }>> {
+  // Per-request connections must never use the process-wide env cache, so a UI
+  // connection switch always lists fresh from the chosen provider. A request is
+  // connection-bound if it carries EITHER a base URL or an api key (e.g. testing
+  // "default OpenAI + my key" must honour the typed key, not the env).
+  const requestBound = Boolean(request && (
+    (typeof request.baseURL === "string" && request.baseURL.trim()) ||
+    (typeof request.apiKey === "string" && request.apiKey.trim())
+  ));
+  if (requestBound) {
+    const client = createOpenAIClient(request);
+    return mapModelListPage(await client.models.list());
+  }
+
   if (!modelListPromise) {
     const client = createOpenAIClient();
-    modelListPromise = client.models.list().then((page: any) => {
-      const data = Array.isArray(page.data) ? page.data : [];
-      return data
-        .map((model: any) => ({ id: String(model.id), created: typeof model.created === "number" ? model.created : undefined }))
-        .filter((model: { id: string; created?: number }) => model.id && !/embed|rerank|moderation|tts|whisper|image|audio/i.test(model.id));
-    });
+    modelListPromise = client.models.list().then(mapModelListPage);
   }
 
   return modelListPromise;
+}
+
+// Used by the UI connection picker / "test connection" (POST /api/models).
+export async function listModelsForConnection(baseURL?: string, apiKey?: string): Promise<string[]> {
+  const models = await listOpenAICompatibleModels({ baseURL, apiKey });
+  return models.map((model) => model.id);
 }
 
 function rankModelCandidates(models: Array<{ id: string; created?: number }>, preferences: RegExp[]): string | undefined {
@@ -497,9 +563,9 @@ async function chooseOpenAIModel(request: AgentTurnRequest): Promise<string> {
     return explicit;
   }
 
-  if (getOpenAIBaseURL()) {
+  if (getOpenAIBaseURL(request)) {
     try {
-      const models = await listOpenAICompatibleModels();
+      const models = await listOpenAICompatibleModels(request);
       const preferred = request.perception === "text+vision"
         ? rankModelCandidates(models, [/sonnet/i, /haiku/i, /claude/i])
         : rankModelCandidates(models, [/haiku/i, /sonnet/i, /claude/i]);
@@ -628,10 +694,10 @@ function buildGrudgeLedgerText(request: AgentTurnRequest): string {
   }
 
   lines.push(
-    "### Visible drama obligation",
-    "- If this ledger contains FRIENDLY-FIRE GRUDGE, mention the ally betrayal in thought and usually in one concise `say` line.",
-    "- If this ledger contains SELF-OWN SHAME, acknowledge the embarrassment or overconfidence before taking a safer action.",
-    "- Personality mapping: chaos comedian jokes about the wound; patient survivor stores the name and acts cold; reckless duelist may try a risky revenge if not suicidal; terrain reader cites the mistake precisely; defensive survivor chooses safety while remembering the debt."
+    "### Visible drama cues",
+    "- If this ledger contains FRIENDLY-FIRE GRUDGE, ally betrayal is strong material for the public plan or a concise `say` line.",
+    "- If this ledger contains SELF-OWN SHAME, embarrassment or overconfidence can color the next decision and trash talk.",
+    "- Personality mapping: chaos comedian jokes about the wound; patient survivor stores the name and acts cold; reckless duelist may escalate when survivable; terrain reader cites the mistake precisely; defensive survivor chooses safety while remembering the debt."
   );
 
   return lines.join("\n");
@@ -639,41 +705,40 @@ function buildGrudgeLedgerText(request: AgentTurnRequest): string {
 
 function buildFireDisciplineText(): string {
   return [
-    "## Fire discipline policy",
+    "## Fire risk checklist",
     "- A skipped shot is better than a meaningless self-hit or ally splash.",
     "- point-blank explosive fire into nearby terrain is a shame event, not a default move.",
-    "- Before firing Bazooka, Hand Grenade, Holy Grenade, or Dynamite, check aim clearance and the blast/friendly-fire map from assess_spatial_risk.",
-    "- If explosive muzzle clearance is under about 180 px, or allies are clustered near the likely impact area, Prefer walk, jump, backflip, wait, or end_turn instead of firing.",
-    "- If no living enemy is nearby and visible enough for a sane shot, prefer closing distance with walk, jump, backflip, Drill, Jet Pack, or Ninja Rope instead of shooting into water, terrain, or empty sky.",
-    "- `end_turn` is a valid tactical pass when the current worm has no sane shot. Use chat to make the pass dramatic rather than forcing random explosions.",
-    "- Non-explosive weapons are safer only when the line is actually clear; do not use them as fake certainty."
+    "- Facts to consider before explosive fire: aim clearance, nearby terrain, blast radius, ally separation, and whether the line is actually open.",
+    "- If explosive muzzle clearance is under about 180 px, or allies are clustered near likely impact areas, treat the shot as high risk and account for it explicitly.",
+    "- `wait` can spend a small amount of time without firing; it does not pass the turn by itself.",
+    "- Non-explosive weapons are safer only when the line is actually clear; do not use them as fake certainty.",
+    "- This checklist intentionally does not choose the alternative action for you."
   ].join("\n");
 }
 
 function buildMobilityPlanText(): string {
   return [
-    "## Mobility and travel continuity",
-    "- If your previous personal turns show a travel plan toward an enemy or away from water, continue the same travel plan unless the current state clearly makes it unsafe.",
-    "- Avoid left-right dithering: do not reverse your last walking direction just because a new turn started. Reverse only for a visible wall, water, enemy threat, or better route you choose.",
-    "- When no sane shot exists, movement is the default tactical action: close distance, climb, drill, jetpack, rope, or end_turn after repositioning.",
-    "- Jet Pack primitives: `jetpack_start`; `jetpack_thrust` with direction `up`, `left`, `right`, `up_left`, or `up_right` and `ms`; `jetpack_stop`.",
-    "- Jet Pack is manual piloting. Short pulses are safer near ceilings or water; long thrusts can slam you into terrain or drop you badly.",
-    "- Ninja Rope primitives: aim first with `aim` or `aim_delta`, then `rope_fire`, then `rope_contract` or `rope_expand`; use `walk left/right` while attached to swing; use `rope_release` to detach.",
-    "- For real rope swinging, prefer `rope_swing` with direction `left` or `right` and ms duration instead of one tiny walk step; it represents holding the movement key while attached.",
-    "- Rope is manual piloting. If `rope_fire` misses terrain, do not keep repeating it forever; switch to another movement or end_turn.",
-    "- No `move_to`, route solver, autopilot, or guaranteed escape. You choose direction and duration yourself."
+    "## Inventory and primitive cheatsheet",
+    "- No item is a default move. Inventory descriptions are factual capabilities, costs, risks, and primitive names.",
+    "- `walk` takes 1-160 primitive steps. Small counts are short key holds; large counts are longer key holds. Feedback reports actual dx/dy.",
+    "- Jet Pack manual low-level mobility primitives: `jetpack_start`, `jetpack_thrust`, `jetpack_stop`.",
+    "- Jet Pack activation consumes one Jet Pack ammo and creates a finite fuel pool; thrust consumes fuel and feedback reports fuel before/after.",
+    "- Jet Pack screen-relative directions: `up` decreases y, `left` decreases x, `right` increases x, `up_left` combines up+left, `up_right` combines up+right.",
+    "- Ninja Rope manual low-level mobility primitives: aim, `rope_fire`, `rope_contract`, `rope_expand`, `rope_swing`, `rope_release`.",
+    "- Ninja Rope feedback says attached/no anchor and any actual dx/dy movement. Rope swing uses screen-relative `left`/`right` while attached.",
+    "- There is no voluntary end-turn tool. If the game still gives this worm control after setup or movement, the engine calls the same worm again with fresh feedback while time remains.",
+    "- No `move_to`, route solver, autopilot, guaranteed escape, or guaranteed shot. You choose direction, duration, aim, weapon, and risk yourself."
   ].join("\n");
 }
 
 function buildLongTermCampaignPlanText(): string {
   return [
-    "## Long-term campaign plan",
-    "- Every submitted turn should include `target`, `campaignPlan`, and `nextTurnPlan` fields, even when the action is just movement.",
-    "- `campaignPlan` is this worm's multi-turn intent: who you are moving toward, which side/height you are trying to reach, and whether you are opening terrain for a later shot.",
-    "- `nextTurnPlan` is the concrete continuation for this same worm's next activation, so personal memory can preserve direction and avoid left-right dithering.",
-    "- If there is no sane shot this turn, prefer meaningful travel: walk 40-120 steps on open ground, or combine jump/backflip/Jet Pack/Ninja Rope/Drill to get closer or safer.",
-    "- Use 5-10 walk steps only for fine positioning near a cliff, mine, wall, ally, or water. It is too little for travel across a large map.",
-    "- If a wall blocks travel and mobility cannot solve it, a safe Bazooka shot into terrain may be a terrain-opening shot for the next turn. This is demolition, not random shooting."
+    "## Planning memory fields",
+    "- Every submitted turn should include `target`, `campaignPlan`, and `nextTurnPlan` fields.",
+    "- They are memory, not orders. Use them to record your current intent so this same worm can remember it later.",
+    "- `campaignPlan` can describe an enemy, terrain objective, survival goal, grudge, or reason for waiting instead of firing.",
+    "- `nextTurnPlan` can keep, revise, or abandon the prior plan based on new feedback.",
+    "- Do not treat prior plans as autopilot; re-read current state and inventory before acting."
   ].join("\n");
 }
 
@@ -700,9 +765,11 @@ function buildPromptText(request: AgentTurnRequest): string {
     `Active worm name: ${request.wormName || "unknown"}`,
     `Team personality fallback: ${request.personality}`,
     `Chat language for visible say/trashTalk: ${request.chatLanguage || "English"}. Use only this language; no translations or bilingual duplicates.`,
-    `Same physical worm-turn batch: ${request.sameTurnBatch || 1} of ${request.maxSameTurnBatches || "unknown"}.`,
+    `Same physical worm-turn batch: ${request.sameTurnBatch || 1}.`,
+    request.turnTimeRemainingMs != null ? `Physical worm-turn time remaining: ${Math.max(0, Math.round(request.turnTimeRemainingMs / 1000))} seconds.` : "",
+    "The agent has no voluntary end-turn/pass tool. The game ends this worm turn through shot resolution, death, water, mine/physics turn change, or timer expiration.",
     request.sameTurnBatch && request.sameTurnBatch > 1
-      ? "Continuation warning: your previous action batch did not end this worm turn. Avoid repeated chat/setup loops; include `fire` if prepared or `end_turn` if the position is not worth a shot."
+      ? "Continuation warning: your previous action batch did not end this worm turn. Use the fresh feedback; do not repeat a failed mobility primitive or setup loop without new evidence. You may continue acting, inspect, fire, or wait from the current state."
       : "",
     request.model ? `Requested model: ${request.model}` : "",
     `Perception: ${request.perception}`,
@@ -744,7 +811,7 @@ function buildAgentInitialMessages(request: AgentTurnRequest): ChatCompletionMes
 }
 
 function shouldForceFirstWorldSurvey(): boolean {
-  return String(process.env.AGENT_FORCE_FIRST_WORLD_SURVEY ?? "true").toLowerCase() !== "false";
+  return String(process.env.AGENT_FORCE_FIRST_WORLD_SURVEY ?? "false").toLowerCase() === "true";
 }
 
 function createArenaTools(request: AgentTurnRequest, onSubmit: (decision: AgentDecision) => void) {
@@ -858,17 +925,17 @@ function createLoggingMiddleware(request: AgentTurnRequest) {
   });
 }
 
-function createChatModel(model: string): ChatOpenAI {
-  const apiKey = getOpenAIApiKey();
+function createChatModel(model: string, request?: ConnectionOverride): ChatOpenAI {
+  const apiKey = getOpenAIApiKey(request);
   if (!apiKey) {
-    throw new Error("Missing OpenAI-compatible API key. Set API_KEY or OPENAI_API_KEY.");
+    throw new Error("Missing OpenAI-compatible API key. Set a connection (Base URL + key) in the UI, or API_KEY / OPENAI_API_KEY.");
   }
 
   return new ChatOpenAI({
     model,
     apiKey,
     configuration: {
-      baseURL: getOpenAIBaseURL()
+      baseURL: getOpenAIBaseURL(request)
     },
     maxTokens: Number(process.env.OPENAI_MAX_TOKENS ?? "16000"),
     temperature: process.env.OPENAI_TEMPERATURE ? Number(process.env.OPENAI_TEMPERATURE) : undefined,
@@ -881,7 +948,13 @@ function createChatModel(model: string): ChatOpenAI {
 }
 
 async function callCreateAgent(request: AgentTurnRequest): Promise<AgentDecision> {
-  if (!getOpenAIApiKey()) {
+  // Explicit zero-key demo: a "mock" model runs the deterministic scripted
+  // agent so the arena plays to a winner with no API key configured.
+  if (request.model === "mock") {
+    return mockDecision(request);
+  }
+
+  if (!getOpenAIApiKey(request)) {
     return mockDecision(request);
   }
 
@@ -894,7 +967,7 @@ async function callCreateAgent(request: AgentTurnRequest): Promise<AgentDecision
   const maxModelCalls = Number(process.env.AGENT_REACT_MAX_ITERATIONS ?? "6");
 
   const agent = createAgent({
-    model: createChatModel(model),
+    model: createChatModel(model, request),
     tools,
     middleware: [
       createLoggingMiddleware(request),
@@ -905,7 +978,7 @@ async function callCreateAgent(request: AgentTurnRequest): Promise<AgentDecision
 
   logAgentEvent(requestId, "provider/createAgent/request-meta", {
     provider: "langchain-createAgent-openai-compatible",
-    baseURL: getOpenAIBaseURL() || "https://api.openai.com/v1",
+    baseURL: getOpenAIBaseURL(request) || "https://api.openai.com/v1",
     model,
     perception: request.perception,
     wormId: request.wormId,
@@ -963,7 +1036,9 @@ async function callCreateAgent(request: AgentTurnRequest): Promise<AgentDecision
 export async function decideTurn(input: unknown): Promise<AgentDecision> {
   const request = AgentTurnRequestSchema.parse(input);
   const requestId = getRequestId(request);
-  logAgentEvent(requestId, "request/input", request);
+  // Never write the user's API key to log files.
+  const redacted = request.apiKey ? { ...request, apiKey: "***redacted***" } : request;
+  logAgentEvent(requestId, "request/input", redacted);
   return callCreateAgent(request);
 }
 

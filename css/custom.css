@@ -247,3 +247,38 @@ kbd {
     font-size: 17px;
     border-color: black;
 }
+
+/* Themed front-menu background. The background-image is set inline by
+   MenuAudio (asset-pack aware) and layered over a gradient fallback, so an
+   absent pack image still renders the gradient. */
+.worms-menu-bg {
+    background-color: #201610;
+    background-size: cover;
+    background-position: center bottom;
+    background-repeat: no-repeat;
+}
+
+/* Front-menu music toggle (created by MenuAudio). */
+#menuMusicToggle {
+    position: absolute;
+    right: 14px;
+    top: 14px;
+    width: 40px;
+    height: 40px;
+    line-height: 40px;
+    text-align: center;
+    font-size: 20px;
+    cursor: pointer;
+    z-index: 100000;
+    color: #fff;
+    background: rgba(20, 16, 10, 0.6);
+    border: 1px solid rgba(255, 255, 255, 0.35);
+    border-radius: 8px;
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    user-select: none;
+}
+
+    #menuMusicToggle:hover {
+        background: rgba(20, 16, 10, 0.85);
+    }

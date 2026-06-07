@@ -43,7 +43,8 @@ class Team
         this.weaponManager = new WeaponManager();
 
         this.currentWorm = 0;
-        this.initalNumberOfWorms = 4;
+        // Configurable via the menu (Settings.WORMS_PER_TEAM); defaults to 4.
+        this.initalNumberOfWorms = (typeof Settings != "undefined" && Settings.WORMS_PER_TEAM > 0) ? Settings.WORMS_PER_TEAM : 4;
 
         this.worms = new Array(this.initalNumberOfWorms);
         for (var i = 0; i < this.initalNumberOfWorms; i++)

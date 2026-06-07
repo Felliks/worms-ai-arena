@@ -1,0 +1,22 @@
+NOTICE
+======
+
+This repository contains source code only. It does NOT contain, and does not
+distribute, any Worms Armageddon game assets.
+
+The original Worms Armageddon graphics, sounds, fonts and music are the property
+of and copyright (c) Team17 Digital Limited. They are proprietary and are not
+included in this repository.
+
+The tooling in this project (see ASSETS.md and scripts/fetch-assets.ts) lets you
+install such assets LOCALLY, into a gitignored folder, from sources you supply
+and are authorised to use (preferably extracted from your own legally-owned copy
+of the game). Those assets are never committed and must not be redistributed.
+
+For any public, hosted, or commercial release you must replace these with art,
+audio and fonts that you are legally permitted to distribute.
+
+This project's own source code is licensed under Apache-2.0 (see LICENSE.txt).
+"Worms" and "Worms Armageddon" are trademarks of Team17. This project is an
+unofficial, non-commercial fan/educational work and is not affiliated with or
+endorsed by Team17.

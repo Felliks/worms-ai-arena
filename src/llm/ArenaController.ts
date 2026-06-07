@@ -25,6 +25,7 @@ class ArenaController
     wormMemories;
     currentPhysicalTurnKey;
     sameTurnBatchCounts;
+    physicalTurnDeadlines;
 
     constructor(game)
     {
@@ -42,6 +43,7 @@ class ArenaController
         this.wormMemories = {};
         this.currentPhysicalTurnKey = "";
         this.sameTurnBatchCounts = {};
+        this.physicalTurnDeadlines = {};
     }
 
     isEnabled()
@@ -49,12 +51,21 @@ class ArenaController
         return this.enabled;
     }
 
+    // The resolved menu config (names, colours, personas, connection cascade),
+    // or null for the legacy ?arena= URL launch path.
+    getRuntime()
+    {
+        return (typeof ArenaConfig != "undefined" && ArenaConfig.runtime) ? ArenaConfig.runtime : null;
+    }
+
     configureTeams()
     {
         this.teamConfigs = [];
+        var rt = this.getRuntime();
         var types = Settings.ARENA_TEAM_TYPES.length > 0 ? Settings.ARENA_TEAM_TYPES : ["human", "human"];
         for (var i = 0; i < types.length; i++)
         {
+            var rtTeam = rt && rt.teams[i] ? rt.teams[i] : null;
             var type = String(types[i]).toLowerCase();
             var isVision = type == "vlm" || type == "vision";
             var isHuman = type == "human" || type == "person";
@@ -66,9 +77,9 @@ class ArenaController
                 provider: isHuman ? "human" : "server",
                 model: model,
                 perception: isVision ? "text+vision" : "text",
-                personality: i % 2 == 0 ? "reckless aggressor" : "defensive survivor",
+                personality: rtTeam ? rtTeam.personality : (i % 2 == 0 ? "reckless aggressor" : "defensive survivor"),
                 chatLanguage: Settings.ARENA_CHAT_LANGUAGE,
-                displayName: (isHuman ? "Human Team " + i : (isVision ? "VLM Team " + i : "LLM Team " + i)) + modelLabel
+                displayName: rtTeam ? rtTeam.displayName : ((isHuman ? "Human Team " + i : (isVision ? "VLM Team " + i : "LLM Team " + i)) + modelLabel)
             });
         }
 
@@ -80,15 +91,34 @@ class ArenaController
                 if (config)
                 {
                     var team = this.game.players[p].getTeam();
+                    var rtTeam2 = rt && rt.teams[p] ? rt.teams[p] : null;
                     team.name = config.displayName;
-                    team.color = ArenaController.TEAM_COLORS[p % ArenaController.TEAM_COLORS.length];
+                    team.color = (rtTeam2 && rtTeam2.color) ? rtTeam2.color : ArenaController.TEAM_COLORS[p % ArenaController.TEAM_COLORS.length];
                     for (var w = 0; w < team.worms.length; w++)
                     {
+                        if (rtTeam2 && rtTeam2.worms[w] && rtTeam2.worms[w].name)
+                        {
+                            team.worms[w].name = rtTeam2.worms[w].name;
+                        }
                         team.worms[w].preRendering();
                     }
                 }
             }
         }
+    }
+
+    // Cascade resolution (worm -> team -> global) for the worm whose turn it is.
+    resolveWormRuntime(playerIndex)
+    {
+        var rt = this.getRuntime();
+        if (!rt || !rt.teams[playerIndex])
+        {
+            return null;
+        }
+        var slot = 0;
+        try { slot = this.game.players[playerIndex].getTeam().currentWorm; } catch (e) { slot = 0; }
+        var worms = rt.teams[playerIndex].worms || [];
+        return worms[slot] || worms[0] || null;
     }
 
     start()
@@ -106,7 +136,6 @@ class ArenaController
             chatLanguage: Settings.ARENA_CHAT_LANGUAGE,
             memoryStrategy: Settings.ARENA_MEMORY_STRATEGY,
             memoryWindow: Settings.ARENA_MEMORY_WINDOW,
-            maxBatchesPerTurn: Settings.ARENA_MAX_BATCHES_PER_TURN,
             teams: this.teamConfigs
         });
     }
@@ -171,22 +200,20 @@ class ArenaController
         var wormId = this.wormId(playerIndex, worm.name);
         var turnKey = physicalTurnKey || (player.id + ":" + worm.name + ":" + player.getTeam().currentWorm);
         var sameTurnBatch = this.registerSameTurnBatch(turnKey);
-
-        if (sameTurnBatch > Settings.ARENA_MAX_BATCHES_PER_TURN)
+        var remainingTurnMs = this.physicalTurnRemainingMs(turnKey);
+        if (remainingTurnMs <= 0)
         {
             this.turnNumber++;
             this.previousFeedback = [
                 "## Engine feedback",
                 "",
-                "- Same physical worm-turn batch cap reached: " + Settings.ARENA_MAX_BATCHES_PER_TURN + " agent decisions already ran without ending the game turn.",
-                "- The engine ends this worm turn now so the match cannot stall on repeated walking, aiming, chatting, or waiting.",
-                "- Next time, include `fire` or `end_turn` after setup actions when you are done."
+                "- Physical worm-turn timer expired. The engine advances to the next player."
             ].join("\n");
-            this.appendWormMemory(wormId, worm.name, "Same physical turn batch cap reached after " + Settings.ARENA_MAX_BATCHES_PER_TURN + " non-ending decisions; engine forced end_turn.");
-            this.postAgentEvent("ai-same-turn-batch-cap", {
+            this.appendWormMemory(wormId, worm.name, "Physical worm-turn timer expired before the turn ended by shot, death, water, mine, or physics turn change.");
+            this.postAgentEvent("ai-physical-turn-timeout", {
                 physicalTurnKey: turnKey,
                 sameTurnBatch: sameTurnBatch,
-                maxBatchesPerTurn: Settings.ARENA_MAX_BATCHES_PER_TURN,
+                remainingTurnMs: remainingTurnMs,
                 feedbackMarkdown: this.previousFeedback,
                 playerIndex: playerIndex,
                 wormName: worm.name
@@ -197,56 +224,83 @@ class ArenaController
         }
 
         this.turnNumber++;
-        this.pauseTurnTimer();
 
         var wormMemory = this.getWormMemory(wormId, worm.name);
         var interactionInboxMarkdown = this.formatInteractionInbox(wormMemory);
         var turnContext: any = {
+            requestId: null,
             playerIndex: playerIndex,
             wormName: worm.name,
             wormId: wormId,
             turnNumber: this.turnNumber,
             physicalTurnKey: turnKey,
             sameTurnBatch: sameTurnBatch,
+            physicalTurnDeadlineAt: this.physicalTurnDeadlines[turnKey],
+            turnTimeRemainingMs: remainingTurnMs,
             timedOut: false,
             endedByGame: false,
             executingActions: false,
             endedByGameLogged: false,
-            voluntaryEndTurn: false,
             abortController: typeof AbortController != "undefined" ? new AbortController() : null,
             timeoutId: null
         };
         turnContext.timeoutId = setTimeout(() =>
         {
             this.timeoutAiTurn(turnContext);
-        }, Math.max(5000, Settings.PLAYER_TURN_TIME));
+        }, Math.max(250, remainingTurnMs));
         this.activeAiTurn = turnContext;
 
         var snapshot = ArenaSnapshot.toMarkdown(this.game, config, this.previousFeedback);
         var requestId = "browser-turn-" + this.turnNumber + "-team-" + playerIndex + "-" + Date.now();
+        turnContext.requestId = requestId;
+
+        // Resolve the menu config (connection cascade + persona override) for the
+        // worm whose turn it is. Falls back to the legacy per-team config when no
+        // menu runtime is present (e.g. the ?arena= URL launch path).
+        var wormRuntime = this.resolveWormRuntime(playerIndex);
+        var resolvedModel = config.model || undefined;
+        var resolvedPersonality = config.personality;
+        var resolvedProfile = this.formatWormProfile(worm.name);
+        var resolvedConnection = null;
+        if (wormRuntime)
+        {
+            if (wormRuntime.personalityShort) { resolvedPersonality = wormRuntime.personalityShort; }
+            if (wormRuntime.personaMarkdown) { resolvedProfile = wormRuntime.personaMarkdown; }
+            resolvedConnection = wormRuntime.connection || null;
+            if (resolvedConnection && resolvedConnection.model) { resolvedModel = resolvedConnection.model; }
+        }
+
         var payload: any = {
             requestId: requestId,
             matchId: "local-browser",
             turnId: this.turnNumber,
             teamIndex: playerIndex,
             teamName: this.game.players[playerIndex].getTeam().name,
-            personality: config.personality,
+            personality: resolvedPersonality,
             chatLanguage: config.chatLanguage,
             wormId: wormId,
             wormName: worm.name,
-            wormProfileMarkdown: this.formatWormProfile(worm.name),
+            wormProfileMarkdown: resolvedProfile,
             wormMemoryMarkdown: this.formatWormMemory(wormMemory),
             chatHistoryMarkdown: this.formatChatHistory(),
             interactionInboxMarkdown: interactionInboxMarkdown,
             memoryStrategy: Settings.ARENA_MEMORY_STRATEGY,
             memoryWindow: Settings.ARENA_MEMORY_WINDOW,
             sameTurnBatch: sameTurnBatch,
-            maxSameTurnBatches: Settings.ARENA_MAX_BATCHES_PER_TURN,
-            model: config.model || undefined,
+            turnTimeRemainingMs: remainingTurnMs,
+            model: resolvedModel,
             perception: config.perception,
             snapshotMarkdown: snapshot,
             feedbackMarkdown: this.previousFeedback
         };
+
+        // Per-request connection (only when a real Base URL is configured; the
+        // demo/mock connection sends model:"mock" with no creds).
+        if (resolvedConnection && resolvedConnection.baseURL)
+        {
+            payload.baseURL = resolvedConnection.baseURL;
+            if (resolvedConnection.apiKey) { payload.apiKey = resolvedConnection.apiKey; }
+        }
 
         if (config.perception == "text+vision")
         {
@@ -272,12 +326,14 @@ class ArenaController
             {
                 return response.text().then((text) =>
                 {
-                    this.debug("agent/http-response", {
+                    var httpPayload = {
                         requestId: requestId,
                         status: response.status,
                         ok: response.ok,
                         responseText: text
-                    });
+                    };
+                    this.debug("agent/http-response", httpPayload);
+                    this.postAgentEvent("agent-http-response", httpPayload);
 
                     if (!response.ok)
                     {
@@ -300,6 +356,14 @@ class ArenaController
                 }
                 this.debug("agent/decision", {
                     requestId: requestId,
+                    decision: decision
+                });
+                this.postAgentEvent("agent-decision", {
+                    requestId: requestId,
+                    turnNumber: turnContext.turnNumber,
+                    sameTurnBatch: turnContext.sameTurnBatch,
+                    playerIndex: turnContext.playerIndex,
+                    wormName: turnContext.wormName,
                     decision: decision
                 });
                 this.handleDecision(config, decision, turnContext);
@@ -327,7 +391,6 @@ class ArenaController
                 });
                 this.clearAiTurn(turnContext);
                 this.busy = false;
-                this.resumeTurnTimer();
             });
     }
 
@@ -356,7 +419,6 @@ class ArenaController
         });
         this.clearAiTurn(turnContext);
         this.busy = false;
-        this.resumeTurnTimer();
         this.game.state.timerTiggerNextTurn();
     }
 
@@ -399,8 +461,7 @@ class ArenaController
                     currentWorm: currentWorm ? currentWorm.name : null,
                     expectedWorm: turnContext.wormName,
                     currentWormDead: currentWorm ? currentWorm.isDead : null,
-                    executingActions: turnContext.executingActions,
-                    voluntaryEndTurn: turnContext.voluntaryEndTurn
+                    executingActions: turnContext.executingActions
                 }
             });
         }
@@ -412,7 +473,6 @@ class ArenaController
 
         this.clearAiTurn(turnContext);
         this.busy = false;
-        this.resumeTurnTimer();
     }
 
     clearAiTurn(turnContext)
@@ -462,11 +522,13 @@ class ArenaController
                 this.previousFeedback = ArenaTelemetry.formatActionFeedback(records, this.game);
                 this.rememberExecutedTurn(turnContext, decision, records, this.previousFeedback);
                 this.recordInteractionsFromRecords(turnContext, records);
-                this.postAgentEvent("engine-feedback", {
+                var feedbackPayload = {
                     feedbackMarkdown: this.previousFeedback,
                     actions: decision.actions || [],
                     records: records
-                });
+                };
+                this.debug("engine-feedback", feedbackPayload);
+                this.postAgentEvent("engine-feedback", feedbackPayload);
                 var shouldContinueSameAiTurn = this.isAiTurnCurrent(turnContext);
                 if (shouldContinueSameAiTurn)
                 {
@@ -475,14 +537,13 @@ class ArenaController
                         wormName: turnContext.wormName,
                         turnNumber: turnContext.turnNumber,
                         sameTurnBatch: turnContext.sameTurnBatch,
-                        maxBatchesPerTurn: Settings.ARENA_MAX_BATCHES_PER_TURN,
+                        turnTimeRemainingMs: this.physicalTurnRemainingMs(turnContext.physicalTurnKey),
                         reason: "Action batch did not end the game turn; requesting another AI decision with fresh feedback."
                     });
                     this.lastTurnKey = "";
                 }
                 this.clearAiTurn(turnContext);
                 this.busy = false;
-                this.resumeTurnTimer();
             });
     }
 
@@ -506,6 +567,24 @@ class ArenaController
                     if (record)
                     {
                         records.push(record);
+                        this.debug("tool/result", {
+                            requestId: turnContext.requestId,
+                            turnNumber: turnContext.turnNumber,
+                            sameTurnBatch: turnContext.sameTurnBatch,
+                            playerIndex: turnContext.playerIndex,
+                            wormName: turnContext.wormName,
+                            action: record.action,
+                            record: record
+                        });
+                        this.postAgentEvent("tool-result", {
+                            requestId: turnContext.requestId,
+                            turnNumber: turnContext.turnNumber,
+                            sameTurnBatch: turnContext.sameTurnBatch,
+                            playerIndex: turnContext.playerIndex,
+                            wormName: turnContext.wormName,
+                            action: record.action,
+                            record: record
+                        });
                     }
                 });
             })(actions[i]);
@@ -518,6 +597,22 @@ class ArenaController
     {
         var player = this.game.state.getCurrentPlayer();
         var worm = player.getTeam().getCurrentWorm();
+        this.debug("tool/call", {
+            requestId: turnContext.requestId,
+            turnNumber: turnContext.turnNumber,
+            sameTurnBatch: turnContext.sameTurnBatch,
+            playerIndex: turnContext.playerIndex,
+            wormName: worm.name,
+            action: action
+        });
+        this.postAgentEvent("tool-call", {
+            requestId: turnContext.requestId,
+            turnNumber: turnContext.turnNumber,
+            sameTurnBatch: turnContext.sameTurnBatch,
+            playerIndex: turnContext.playerIndex,
+            wormName: worm.name,
+            action: action
+        });
         ArenaTelemetry.startAction(action, worm);
         var tool = action.tool || action.type;
 
@@ -632,14 +727,6 @@ class ArenaController
         if (tool == "wait")
         {
             return this.wait(action.ms || 500, turnContext).then(() => ArenaTelemetry.finishAction());
-        }
-
-        if (tool == "end_turn")
-        {
-            turnContext.voluntaryEndTurn = true;
-            ArenaTelemetry.addNote("Voluntarily ended the turn.");
-            this.game.state.timerTiggerNextTurn();
-            return this.wait(150, turnContext, true).then(() => ArenaTelemetry.finishAction());
         }
 
         ArenaTelemetry.addNote("Unknown tool `" + tool + "` ignored.");
@@ -928,7 +1015,7 @@ class ArenaController
         {
             return ArenaSnapshot.weaponUseGuidance(weapon);
         }
-        return "tactical use: inspect the Markdown state before selecting; best when its primitive fits current terrain; risk: unclear item can waste the turn; agent primitives: select_weapon, then relevant movement/aim/fire primitives.";
+        return "tactical use facts: inspect the Markdown state before selecting; risk: unclear item can waste turn time; agent primitives: select_weapon, then relevant movement/aim/fire primitives.";
     }
 
     setAim(worm, degrees)
@@ -978,10 +1065,26 @@ class ArenaController
         {
             this.currentPhysicalTurnKey = physicalTurnKey;
             this.sameTurnBatchCounts = {};
+            this.physicalTurnDeadlines = {};
         }
 
         this.sameTurnBatchCounts[physicalTurnKey] = (this.sameTurnBatchCounts[physicalTurnKey] || 0) + 1;
+        this.physicalTurnDeadline(physicalTurnKey);
         return this.sameTurnBatchCounts[physicalTurnKey];
+    }
+
+    physicalTurnDeadline(physicalTurnKey)
+    {
+        if (!this.physicalTurnDeadlines[physicalTurnKey])
+        {
+            this.physicalTurnDeadlines[physicalTurnKey] = Date.now() + Math.max(5000, Settings.PLAYER_TURN_TIME);
+        }
+        return this.physicalTurnDeadlines[physicalTurnKey];
+    }
+
+    physicalTurnRemainingMs(physicalTurnKey)
+    {
+        return Math.max(0, this.physicalTurnDeadline(physicalTurnKey) - Date.now());
     }
 
     wormId(teamIndex, wormName)
@@ -1006,42 +1109,42 @@ class ArenaController
         var profiles = [
             {
                 title: "reckless bazooka duelist",
-                tactic: "Prefer decisive explosive shots when the muzzle clearance is safe; accept misses, avoid repeating a self-damaging lane.",
+                tactic: "Personality tendency: enjoys decisive explosive shots, accepts misses, and dislikes repeating a self-damaging lane.",
                 chat: "short, cocky, direct"
             },
             {
                 title: "patient survivor",
-                tactic: "Protect HP, reposition out of pits, use end_turn after movement if the shot is not clearly worth the risk.",
+                tactic: "Personality tendency: values HP, stable footing, and patience when the position is bad.",
                 chat: "dry, controlled, underplayed"
             },
             {
                 title: "terrain reader",
-                tactic: "Read walls, ceilings, and water danger first; choose ray weapons or movement when explosive exits are blocked.",
+                tactic: "Personality tendency: talks about walls, ceilings, water danger, and line clarity.",
                 chat: "technical, smug, precise"
             },
             {
                 title: "grenade gambler",
-                tactic: "Likes arcing grenades and cluster opportunities, but should back off when friendly-fire map shows allies near the target.",
+                tactic: "Personality tendency: likes arcing grenades and cluster opportunities, with visible nerves around friendly-fire risk.",
                 chat: "theatrical, overconfident"
             },
             {
                 title: "close-range saboteur",
-                tactic: "Looks for short walks, jumps, drill/dynamite opportunities, and avoids wasting turns on very distant blocked targets.",
+                tactic: "Personality tendency: enjoys close-range sabotage, short movement, drill/dynamite ideas, and mocking distant blocked targets.",
                 chat: "mean, concise, opportunistic"
             },
             {
                 title: "revenge tracker",
-                tactic: "Prioritize enemies who recently damaged or nearly hit this worm, unless a safer low-HP target is available.",
+                tactic: "Personality tendency: remembers recent damage and near misses as personal grudges.",
                 chat: "personal, grudge-driven"
             },
             {
                 title: "ray-weapon pragmatist",
-                tactic: "Use Shotgun/Minigun when straight-line clearance is better than explosive clearance; do not force lob shots through ceilings.",
+                tactic: "Personality tendency: respects straight-line clearance and distrusts lobs through ceilings.",
                 chat: "calm, dismissive"
             },
             {
                 title: "chaos comedian",
-                tactic: "Make bold plays for spectacle, but use memory feedback to stop repeating the exact same miss.",
+                tactic: "Personality tendency: wants spectacle, jokes about mistakes, and remembers repeated misses.",
                 chat: "funny, self-assured, punchy"
             }
         ];
@@ -1052,11 +1155,12 @@ class ArenaController
     formatWormProfile(wormName)
     {
         var profile = this.getWormProfileData(wormName);
+        var tactic = String(profile.tactic || "").replace(/^Personality tendency:\s*/i, "");
         return [
             "## Worm profile",
             "- Name-bound profile for `" + wormName + "`.",
             "- Personality: " + profile.title + ".",
-            "- Tactical bias: " + profile.tactic,
+            "- Personality tendency: " + tactic,
             "- Chat style: " + profile.chat + "."
         ].join("\n");
     }
@@ -1473,22 +1577,6 @@ class ArenaController
         });
     }
 
-    pauseTurnTimer()
-    {
-        if (this.game.gameTimer && this.game.gameTimer.timer)
-        {
-            this.game.gameTimer.timer.pause();
-        }
-    }
-
-    resumeTurnTimer()
-    {
-        if (this.game.gameTimer && this.game.gameTimer.timer && this.game.gameTimer.timer.resume)
-        {
-            this.game.gameTimer.timer.resume();
-        }
-    }
-
     ensureOverlay()
     {
         if (this.overlay)
@@ -1549,7 +1637,7 @@ class ArenaController
             };
         }
 
-        this.debug("agent/request", {
+        var eventPayload = {
             requestId: requestId,
             endpoint: Settings.ARENA_AGENT_ENDPOINT,
             config: config,
@@ -1577,7 +1665,9 @@ class ArenaController
                 screenshot: screenshotInfo,
                 screenshotDataUrl: payload.screenshotDataUrl
             }
-        });
+        };
+        this.debug("agent/request", eventPayload);
+        this.postAgentEvent("agent-request", eventPayload);
     }
 
     postAgentEvent(label, payload)
@@ -1621,15 +1711,8 @@ class ArenaController
             return;
         }
 
-        if (console.groupCollapsed)
-        {
-            console.groupCollapsed("[Arena] " + label);
-            console.log(this.formatDebugValue(value));
-            console.groupEnd();
-        } else
-        {
-            console.log("[Arena] " + label + "\n" + this.formatDebugValue(value));
-        }
+        var rendered = this.formatDebugValue(value);
+        console.log("[Arena] " + label + "\n" + rendered);
     }
 
     formatDebugValue(value)

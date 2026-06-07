@@ -13,11 +13,40 @@ describe("browser game source contracts", () => {
       expect(snapshot).toContain(weapon);
     }
     expect(snapshot).toContain("tactical use");
-    expect(snapshot).toContain("best when");
+    expect(snapshot).toContain("facts:");
     expect(snapshot).toContain("agent primitives");
+    expect(snapshot).toContain("consumes one Jet Pack ammo");
+    expect(snapshot).toContain("screen-relative");
+    expect(snapshot).not.toContain("best when no sane shot exists");
+    expect(snapshot).not.toContain("Use 40-120");
+    expect(snapshot).not.toContain("terrain-opening shot for the next turn");
     expect(controller).toContain("weaponUseGuidance");
     expect(controller).toContain("ArenaSnapshot.weaponUseGuidance");
     expect(controller).toContain("Ninja Rope");
+  });
+
+  it("writes complete arena debug payloads to console and server event logs", () => {
+    const controller = fs.readFileSync(path.join(root, "src", "llm", "ArenaController.ts"), "utf8");
+
+    expect(controller).toContain("postAgentEvent(\"agent-request\"");
+    expect(controller).toContain("postAgentEvent(\"agent-decision\"");
+    expect(controller).toContain("postAgentEvent(\"engine-feedback\"");
+    expect(controller).toContain("console.log(\"[Arena] \" + label + \"\\n\" + rendered)");
+    expect(controller).not.toContain("console.groupCollapsed");
+  });
+
+  it("only preloads bundled default sounds that exist locally", () => {
+    const assetManager = fs.readFileSync(path.join(root, "src", "system", "AssetManager.ts"), "utf8");
+    const match = assetManager.match(/var bundledAudioToBeLoaded = \[([\s\S]*?)\];/);
+
+    expect(match).toBeTruthy();
+    const bundledSounds = Array.from(match![1].matchAll(/data\/sounds\/([^"']+?\.wav|[^"']+?\.WAV)/g), (m) => m[1]);
+    expect(bundledSounds.length).toBeGreaterThan(0);
+    for (const sound of bundledSounds) {
+      expect(fs.existsSync(path.join(root, "data", "sounds", sound))).toBe(true);
+    }
+    expect(assetManager).toContain("originalPackAudioToBeLoaded");
+    expect(assetManager).toContain('Settings.ASSET_PACK != "default"');
   });
 
   it("surfaces start-of-turn self orientation before the agent chooses actions", () => {
@@ -28,6 +57,24 @@ describe("browser game source contracts", () => {
     expect(snapshot).toContain("Weapon in hand");
     expect(snapshot).toContain("Aim elevation");
     expect(snapshot).toContain("Wind at turn start");
+  });
+
+  it("normalizes persona labels before injecting them into prompts", () => {
+    const controller = fs.readFileSync(path.join(root, "src", "llm", "ArenaController.ts"), "utf8");
+    const arenaConfig = fs.readFileSync(path.join(root, "src", "gui", "ArenaConfig.ts"), "utf8");
+
+    expect(controller).toContain("replace(/^Personality tendency:");
+    expect(arenaConfig).toContain("replace(/^Personality tendency:");
+    expect(controller).not.toContain('"- Personality tendency: " + profile.tactic');
+  });
+
+  it("does not request missing default menu music or background assets", () => {
+    const menuAudio = fs.readFileSync(path.join(root, "src", "gui", "MenuAudio.ts"), "utf8");
+
+    expect(menuAudio).toContain('Settings.ASSET_PACK != "default"');
+    expect(menuAudio).toContain("if (hasExternalAssetPack)");
+    expect(menuAudio).toContain("startProcedural();");
+    expect(menuAudio).toContain("linear-gradient(to bottom");
   });
 
   it("has an agent jetpack thrust primitive that applies physics without keyboard timing", () => {

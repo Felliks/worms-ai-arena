@@ -23,6 +23,14 @@ logs/
 *.map
 data/
 *.config
+
+# Original game asset packs (Team17 copyright) and local manifests.
+# Never committed - see ASSETS.md. Example manifests (*.example.json) are kept.
+assets/worms-*/
+assets/*.local.json
+# User-provided original asset drops (Team17 copyright) - never committed.
+OriginalAssets/
+OriginalSounds/
 # Packages #
 ############
 # it's better to unpack these files and commit the raw source

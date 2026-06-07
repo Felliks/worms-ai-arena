@@ -1,0 +1,32 @@
+{
+  "_README": "Copy this file to assets/sprite-mapping.local.json (gitignored). Each entry slices frames from a source sheet you are AUTHORISED to use and repacks them into a single VERTICAL strip named <imageName>.png that the engine expects. The frame count MUST match the matching entry in src/animation/SpriteDefinitions.ts (the Sprite class advances down the Y axis and computes frame height as image.height / frameCount). 'source' is a URL or local path to the source sheet. See ASSETS.md.",
+  "_frames_formats": {
+    "grid": "{ \"grid\": { \"cols\": N, \"rows\": M } } - frames are read left-to-right, top-to-bottom; optional \"indices\": [..] picks/orders a subset",
+    "explicit": "[ { \"x\":px, \"y\":px, \"w\":px, \"h\":px }, ... ] - one rect per output frame, in order"
+  },
+  "sheets": [
+    {
+      "imageName": "wjetflmd",
+      "source": "/absolute/path/to/your/jetpack_flames_down_sheet.png",
+      "frameWidth": 60,
+      "frameHeight": 60,
+      "frames": { "grid": { "cols": 6, "rows": 1 } }
+    },
+    {
+      "imageName": "wwalk",
+      "source": "/absolute/path/to/your/worm_walk_sheet.png",
+      "frameWidth": 60,
+      "frameHeight": 60,
+      "frames": { "grid": { "cols": 15, "rows": 1 } }
+    },
+    {
+      "imageName": "wbaz",
+      "source": "/absolute/path/to/your/worm_bazooka_aim_sheet.png",
+      "frameWidth": 60,
+      "frameHeight": 60,
+      "frames": [
+        { "x": 0, "y": 0, "w": 60, "h": 60 }
+      ]
+    }
+  ]
+}

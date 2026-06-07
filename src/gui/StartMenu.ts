@@ -11,6 +11,8 @@
 ///<reference path="../system/Controls.ts"/>
 ///<reference path="LobbyMenu.ts"/>
 ///<reference path="SettingsMenu.ts"/>
+///<reference path="MenuAudio.ts"/>
+///<reference path="MainMenu.ts"/>
 declare var $;
 
 class StartMenu
@@ -35,10 +37,15 @@ class StartMenu
             ' <kbd>' + String.fromCharCode(Controls.toggleWeaponMenu.keyboard) + '</kbd> or right mouse - Weapon Menu. </p><br>' +
             ' <kbd>Enter</kbd> - Fire weapon. </p><p></p><br>' +
             '<a class="btn btn-primary btn-large" id="startLocal" style="text-align:center">Lets play!</a></div>';
+
+        // Front-menu music + themed background (presentation only, asset-pack
+        // aware, silent/graceful when the assets are not installed).
+        MenuAudio.init();
     }
 
     hide()
     {
+        MenuAudio.stop();
         $('#startMenu').remove();
     }
 
@@ -62,31 +69,9 @@ class StartMenu
                         callback();
                         return;
                     }
-                    this.settingsMenu = new SettingsMenu();
-                    $('#startLocal').removeAttr("disabled");
-                    $('#startOnline').removeAttr("disabled");
-                  
-
-                    // IE tell the user to get a better browser, but still allow them to play
-                    if ($.browser.msie)
-                    {
-                         $('#startTutorial').removeAttr("disabled");
-                        $('#notice').append('<div class="alert alert-error" style="text-align:center">' +
-                            '<strong>Bad news :( </strong> Your browser may hurt game performance. </div> ');
-                    } else if (TouchUI.isTouchDevice())
-                    {
-                        $('#notice').append('<div class="alert alert-error" style="text-align:center">' +
-                            '<strong>Hey tablet user</strong> There may be performance problems and some missing features in the tablet version. You can still play though!</div> ');
-                    }
-                    else
-                    {
-                        $('#startTutorial').removeAttr("disabled");
-                        $('#notice').append('<div class="alert alert-success" style="text-align:center"> <strong> Games loaded and your ready to play!! </strong><br> Also thanks for using a modern browser. <a href="#" id="awesome">Your awesome!</a></div> ');
-                        $('#awesome').click(() => {
-                            Notify.display("Awesome!", "<img src='../data/images/awesome.jpg'/>", 5000);
-                        });
-                    }
-
+                    // Hand off to the themed Worms-style main menu.
+                    MainMenu.show(callback);
+                    return;
                 } else
                 {
                     $('#notice').append('<div class="alert alert-info" style="text-align:center"> <strong> Stand back! I\'m loading game assets! </strong>' +

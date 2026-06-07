@@ -64,7 +64,8 @@ class Worm extends Sprite
     {
         super(Sprites.worms.idle1);
         this.name = NameGenerator.randomName();
-        this.health = 80;
+        // Configurable via the menu (Settings.WORM_HEALTH); defaults to 80.
+        this.health = (typeof Settings != "undefined" && Settings.WORM_HEALTH > 0) ? Settings.WORM_HEALTH : 80;
         this.damageTake = 0;
         this.team = team;
 

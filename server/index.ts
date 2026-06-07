@@ -2,7 +2,7 @@ import "dotenv/config";
 import express from "express";
 import fs from "node:fs";
 import path from "node:path";
-import { decideTurn } from "./agent";
+import { decideTurn, listModelsForConnection } from "./agent";
 import { getAgentLogFile, logAgentEvent } from "./agent-log";
 
 const root = path.resolve(__dirname, "..");
@@ -66,6 +66,21 @@ app.post("/api/agent/turn", async (req, res, next) => {
   } catch (error) {
     console.error(`[agent:${requestId}] HTTP error ${Date.now() - startedAt}ms`);
     next(error);
+  }
+});
+
+// Connection picker / "test connection" for the UI. Returns the model list for
+// a user-supplied OpenAI-compatible connection (or env, when none supplied).
+// Always 200 with { ok } so the browser can show a clear message instead of a
+// thrown fetch. POST keeps the API key out of URLs/query logs.
+app.post("/api/models", async (req, res) => {
+  try {
+    const baseURL = typeof req.body?.baseURL === "string" ? req.body.baseURL : undefined;
+    const apiKey = typeof req.body?.apiKey === "string" ? req.body.apiKey : undefined;
+    const models = await listModelsForConnection(baseURL, apiKey);
+    res.json({ ok: true, models });
+  } catch (error) {
+    res.json({ ok: false, error: (error as Error).message, models: [] });
   }
 });
 

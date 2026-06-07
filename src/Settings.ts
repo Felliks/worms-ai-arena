@@ -13,6 +13,12 @@ module Settings
     //Game vars
     export var PLAYER_TURN_TIME = 120 * 1000;
     export var TURN_TIME_WARING = 10;
+
+    // Battle knobs lifted into the UI. Defaults match the engine's original
+    // literals, so behaviour is identical unless the menu/URL changes them.
+    // (Team reads WORMS_PER_TEAM; Worm reads WORM_HEALTH.)
+    export var WORMS_PER_TEAM = 4;
+    export var WORM_HEALTH = 80;
    
     //General game settings
     export var SOUND = false;
@@ -30,6 +36,29 @@ module Settings
     export var BUILD_MANIFEST_FILE = false;
 
     export var REMOTE_ASSERT_SERVER = "./"; //"../college/fyp/"
+
+    // Asset pack selection.
+    // "default"  -> bundled placeholder assets in data/ (current behaviour).
+    // any other  -> overlays assets from assets/worms-<pack>/ with graceful
+    //               per-asset fallback to the default pack. See ASSETS.md.
+    export var ASSET_PACK = "default";
+
+    // Base directory (relative to the page) for the active asset pack.
+    // For the default pack this returns "data/" so behaviour is unchanged.
+    export function getAssetPackBase()
+    {
+        if (ASSET_PACK && ASSET_PACK != "default")
+        {
+            return "assets/worms-" + ASSET_PACK + "/";
+        }
+        return "data/";
+    }
+
+    // The pack that assets fall back to when the active pack is missing a file.
+    export function getAssetFallbackBase()
+    {
+        return "data/";
+    }
 
     export var PHYSICS_DEBUG_MODE = false;
     export var RUN_UNIT_TEST_ONLY = !true;
@@ -57,7 +86,7 @@ module Settings
     export function getSettingsFromUrl()
     {
         var argv = getUrlVars();
-        var commands = ["physicsDebugDraw","devMode","unitTest","sound","arena","teams","agentEndpoint","models","turnTime","turnMs","chatLang","chatLanguage","historySize","memoryWindow","memoryStrategy","maxBatches","maxBatchesPerTurn"]
+        var commands = ["physicsDebugDraw","devMode","unitTest","sound","arena","teams","agentEndpoint","models","turnTime","turnMs","chatLang","chatLanguage","historySize","memoryWindow","memoryStrategy","maxBatches","maxBatchesPerTurn","assetPack"]
 
         if (argv[commands[0]] == "true")
         {
@@ -79,6 +108,11 @@ module Settings
         if (argv[commands[3]] == "false")
         {
             SOUND = false;
+        }
+
+        if (argv[commands[3]] == "true")
+        {
+            SOUND = true;
         }
 
         if (argv[commands[4]])
@@ -150,6 +184,11 @@ module Settings
         if (argv[commands[15]] || argv[commands[16]])
         {
             ARENA_MAX_BATCHES_PER_TURN = Math.max(1, Math.min(12, Math.round(Number(argv[commands[15]] || argv[commands[16]]) || ARENA_MAX_BATCHES_PER_TURN)));
+        }
+
+        if (argv[commands[17]])
+        {
+            ASSET_PACK = decodeURIComponent(argv[commands[17]]);
         }
 
         Logger.log(" Notice: argv are as follows " + commands);
