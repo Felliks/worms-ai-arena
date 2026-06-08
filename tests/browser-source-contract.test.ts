@@ -111,4 +111,21 @@ describe("browser game source contracts", () => {
     expect(gameState).toContain("forceOutOfBoundsDeaths");
     expect(game).toContain("forceOutOfBoundsDeaths");
   });
+
+  it("applies explosion damage at most once per worm body even if multiple fixtures overlap", () => {
+    const effects = fs.readFileSync(path.join(root, "src", "animation", "Effects.ts"), "utf8");
+
+    expect(effects).toContain("var affectedWorms = []");
+    expect(effects).toContain("affectedWorms.indexOf(worm) != -1");
+    expect(effects).toContain("affectedWorms.push(worm)");
+    expect(effects).toContain("worm.hit(maxDamage * distanceFromEpicenter, entityThatCausedExplosion)");
+  });
+
+  it("warns agents about allies on the same side or height before risky explosive shots", () => {
+    const snapshot = fs.readFileSync(path.join(root, "src", "llm", "ArenaSnapshot.ts"), "utf8");
+
+    expect(snapshot).toContain("nearSameHeight");
+    expect(snapshot).toContain("same-side ally caution");
+    expect(snapshot).toContain("horizontal/low-arc explosives toward that side can endanger them");
+  });
 });

@@ -36,6 +36,7 @@ module Effects
 
         GameInstance.terrain.addToDeformBatch(posX,posY,explosionRadius);
 
+        var affectedWorms = [];
         Physics.applyToNearByObjects(
             epicenter,
             effectedRadius,
@@ -44,6 +45,13 @@ module Effects
                 // Applys force to all the bodies in the radius
                 if (fixture.GetBody().GetType() != b2Body.b2_staticBody && fixture.GetBody().GetUserData() instanceof Worm)
                 {
+                    var worm = fixture.GetBody().GetUserData();
+                    if (affectedWorms.indexOf(worm) != -1)
+                    {
+                        return;
+                    }
+                    affectedWorms.push(worm);
+
                     var direction = fixture.GetBody().GetPosition().Copy();
                     direction.x = Math.floor(direction.x);
                     direction.y = Math.floor(direction.y);
@@ -58,13 +66,13 @@ module Effects
                     }
 
                     var distanceFromEpicenter = diff / effectedRadius;
-                    fixture.GetBody().GetUserData().hit(maxDamage * distanceFromEpicenter,entityThatCausedExplosion)
+                    worm.hit(maxDamage * distanceFromEpicenter, entityThatCausedExplosion)
 
                     forceVec.Normalize();
                     forceVec.Multiply(explosiveForce*distanceFromEpicenter);
 
                     //Quick hack so grave stones are not checked by explosions
-                    if (fixture.GetBody().GetUserData().isDead == true)
+                    if (worm.isDead == true)
                     {
                         forceVec.x = 0;
                         forceVec.y /= 10;

@@ -385,12 +385,16 @@ module ArenaSnapshot
                 var ally = allies[a];
                 var nearSameColumn = Math.abs(ally.dx) <= 220;
                 var nearSameSide = Math.abs(ally.dx) <= 360;
+                var nearSameHeight = Math.abs(ally.dy) <= 90 && Math.abs(ally.dx) <= 700;
                 if (ally.dy > 80 && nearSameColumn)
                 {
                     allySideNotes.push("`" + ally.name + "` is below you at dx " + ally.dx + ", dy " + ally.dy + "; falling/bouncing explosives in this vertical lane risk friendly fire.");
                 } else if (ally.dy > 120 && nearSameSide)
                 {
                     allySideNotes.push("`" + ally.name + "` is below-" + (ally.dx >= 0 ? "right" : "left") + " at dx " + ally.dx + ", dy " + ally.dy + "; shots toward that side can endanger them if they drop short/long.");
+                } else if (nearSameHeight)
+                {
+                    allySideNotes.push("same-side ally caution: `" + ally.name + "` is " + (ally.dx >= 0 ? "right" : "left") + " of you at dx " + ally.dx + ", dy " + ally.dy + "; horizontal/low-arc explosives toward that side can endanger them if the shot lands short/long or bounces.");
                 } else if (Math.abs(ally.dx) <= cautionDistance && Math.abs(ally.dy) <= cautionDistance)
                 {
                     allySideNotes.push("`" + ally.name + "` is close to the active worm at dx " + ally.dx + ", dy " + ally.dy + "; avoid local blasts.");
