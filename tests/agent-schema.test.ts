@@ -250,6 +250,21 @@ describe("proxy prompt contract", () => {
     expect(content[1].text).toContain("SELF/ALLY/ENEMY markers");
     expect(content[1].text).toContain("/tmp/vision/test.jpg");
   });
+
+  it("marks same-turn VLM screenshots as freshly captured after previous actions", () => {
+    const messages = buildOpenAIInitialMessages({
+      ...request,
+      perception: "text+vision" as const,
+      screenshotDataUrl: "data:image/jpeg;base64,BBBB",
+      sameTurnBatch: 2,
+      feedbackMarkdown: "## Engine feedback\n\n- Walked right; moved dx 90."
+    } as any);
+    const content = messages[1]?.content as any[];
+
+    expect(content[1].text).toContain("fresh same-turn continuation screenshot");
+    expect(content[1].text).toContain("captured after your previous action batch");
+    expect(content[1].text).toContain("current visual position");
+  });
 });
 
 describe("createAgent turn context", () => {

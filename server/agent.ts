@@ -776,6 +776,9 @@ function buildPromptText(request: AgentTurnRequest): string {
     request.perception === "text+vision" && request.screenshotDataUrl
       ? "Attached before this text is the current start-of-turn screenshot centered on the active worm, with a world-coordinate grid, cyan ACTIVE WORM arrow, SELF/ALLY/ENEMY markers, team colors, active worm label, and current aim ray. Use it as visual context together with the Markdown state."
       : "",
+    request.perception === "text+vision" && request.screenshotDataUrl && request.sameTurnBatch && request.sameTurnBatch > 1
+      ? "This is a fresh same-turn continuation screenshot captured after your previous action batch and engine feedback; use it as the current visual position, not the earlier screenshot."
+      : "",
     request.visionScreenshotPath ? `Debug copy of attached screenshot saved at: ${request.visionScreenshotPath}` : "",
     request.visionError ? `Vision error: ${request.visionError}` : "",
     buildFireDisciplineText(),

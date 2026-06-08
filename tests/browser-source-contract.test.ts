@@ -59,6 +59,18 @@ describe("browser game source contracts", () => {
     expect(snapshot).toContain("Wind at turn start");
   });
 
+  it("captures a fresh VLM screenshot for every same-worm continuation request", () => {
+    const controller = fs.readFileSync(path.join(root, "src", "llm", "ArenaController.ts"), "utf8");
+
+    expect(controller).toContain("scheduleSameTurnAiContinuation");
+    expect(controller).toContain("sameTurnResumeTimer");
+    expect(controller).toContain('postAgentEvent("agent/continue-same-turn"');
+    expect(controller).toContain('postAgentEvent("agent/continue-same-turn/resume"');
+    expect(controller).toContain("Waiting for render/physics settle before fresh VLM screenshot");
+    expect(controller).toContain("Fresh same-turn VLM screenshot will be captured in runAiTurn.");
+    expect(controller).toContain("payload.screenshotDataUrl = ArenaSnapshot.captureVision(this.game)");
+  });
+
   it("normalizes persona labels before injecting them into prompts", () => {
     const controller = fs.readFileSync(path.join(root, "src", "llm", "ArenaController.ts"), "utf8");
     const arenaConfig = fs.readFileSync(path.join(root, "src", "gui", "ArenaConfig.ts"), "utf8");

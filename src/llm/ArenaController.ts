@@ -26,6 +26,7 @@ class ArenaController
     currentPhysicalTurnKey;
     sameTurnBatchCounts;
     physicalTurnDeadlines;
+    sameTurnResumeTimer;
 
     constructor(game)
     {
@@ -44,6 +45,7 @@ class ArenaController
         this.currentPhysicalTurnKey = "";
         this.sameTurnBatchCounts = {};
         this.physicalTurnDeadlines = {};
+        this.sameTurnResumeTimer = null;
     }
 
     isEnabled()
@@ -532,19 +534,74 @@ class ArenaController
                 var shouldContinueSameAiTurn = this.isAiTurnCurrent(turnContext);
                 if (shouldContinueSameAiTurn)
                 {
-                    this.debug("agent/continue-same-turn", {
+                    var continuePayload = {
                         playerIndex: turnContext.playerIndex,
                         wormName: turnContext.wormName,
                         turnNumber: turnContext.turnNumber,
                         sameTurnBatch: turnContext.sameTurnBatch,
                         turnTimeRemainingMs: this.physicalTurnRemainingMs(turnContext.physicalTurnKey),
-                        reason: "Action batch did not end the game turn; requesting another AI decision with fresh feedback."
-                    });
-                    this.lastTurnKey = "";
+                        reason: "Action batch did not end the game turn; requesting another AI decision with fresh feedback. Fresh same-turn VLM screenshot will be captured in runAiTurn."
+                    };
+                    this.debug("agent/continue-same-turn", continuePayload);
+                    this.postAgentEvent("agent/continue-same-turn", continuePayload);
+                    this.clearAiTurn(turnContext);
+                    this.scheduleSameTurnAiContinuation(config, turnContext);
+                    return;
                 }
                 this.clearAiTurn(turnContext);
                 this.busy = false;
             });
+    }
+
+    scheduleSameTurnAiContinuation(config, turnContext)
+    {
+        if (this.sameTurnResumeTimer)
+        {
+            clearTimeout(this.sameTurnResumeTimer);
+            this.sameTurnResumeTimer = null;
+        }
+
+        this.busy = true;
+        var resume = () =>
+        {
+            this.sameTurnResumeTimer = null;
+            if (!this.isAiTurnCurrent(turnContext))
+            {
+                this.busy = false;
+                return;
+            }
+
+            if (!this.game.state.physicsWorldSettled || this.game.state.hasNextTurnBeenTiggered())
+            {
+                var waitPayload = {
+                    playerIndex: turnContext.playerIndex,
+                    wormName: turnContext.wormName,
+                    turnNumber: turnContext.turnNumber,
+                    sameTurnBatch: turnContext.sameTurnBatch,
+                    turnTimeRemainingMs: this.physicalTurnRemainingMs(turnContext.physicalTurnKey),
+                    reason: "Waiting for render/physics settle before fresh VLM screenshot."
+                };
+                this.debug("agent/continue-same-turn/wait-settle", waitPayload);
+                this.postAgentEvent("agent/continue-same-turn/wait-settle", waitPayload);
+                this.sameTurnResumeTimer = setTimeout(resume, 250);
+                return;
+            }
+
+            var resumePayload = {
+                playerIndex: turnContext.playerIndex,
+                wormName: turnContext.wormName,
+                previousTurnNumber: turnContext.turnNumber,
+                previousSameTurnBatch: turnContext.sameTurnBatch,
+                nextSameTurnBatch: (this.sameTurnBatchCounts[turnContext.physicalTurnKey] || 0) + 1,
+                turnTimeRemainingMs: this.physicalTurnRemainingMs(turnContext.physicalTurnKey),
+                reason: "Fresh same-turn VLM screenshot will be captured in runAiTurn."
+            };
+            this.debug("agent/continue-same-turn/resume", resumePayload);
+            this.postAgentEvent("agent/continue-same-turn/resume", resumePayload);
+            this.runAiTurn(turnContext.playerIndex, config, turnContext.physicalTurnKey);
+        };
+
+        this.sameTurnResumeTimer = setTimeout(resume, 250);
     }
 
     executeActions(actions, turnContext)
@@ -1656,6 +1713,8 @@ class ArenaController
                 interactionInboxMarkdown: payload.interactionInboxMarkdown,
                 memoryStrategy: payload.memoryStrategy,
                 memoryWindow: payload.memoryWindow,
+                sameTurnBatch: payload.sameTurnBatch,
+                turnTimeRemainingMs: payload.turnTimeRemainingMs,
                 model: payload.model,
                 perception: payload.perception,
                 chatLanguage: payload.chatLanguage,
