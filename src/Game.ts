@@ -192,7 +192,13 @@ class Game
             var localPlayerCount = Settings.ARENA_TEAM_TYPES.length > 0 ? Settings.ARENA_TEAM_TYPES.length : 2;
             for (var i = 0; i < localPlayerCount; i++)
             {
-                this.players.push(new Player());
+                // Pass an explicit 1-based id instead of drawing from the finite
+                // pickUnqine([1,2,3,4]) pool: with >4 teams the pool was exhausted, so
+                // extra players got an undefined id. nextPlayer() then returned that
+                // undefined for a LIVE team, and Game's `id == null` check (undefined ==
+                // null is true in JS) wrongly fired "No contest. All remaining teams are
+                // dead." A loop-index id is always unique and defined for any team count.
+                this.players.push(new Player(i + 1));
             }
 
         } else if (this.gameType == Game.types.ONLINE_GAME && playerIds != null)

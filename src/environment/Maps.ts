@@ -7,15 +7,31 @@ class GameMap
     {
         this.mapDef = mapDef;
         this.currentSpawn = 0;
+        // pickUnqine caches its pool in a module-global keyed by string and DRAINS it by
+        // reference. Reset "spanwPionts" each match so a replay (or a different map reusing
+        // the same key) starts from a full set instead of an emptied / wrong-map pool.
+        Utilies.resetUnqine("spanwPionts");
     }
 
     getNextSpawnPoint()
     {
-        var raw = Utilies.pickUnqine(this.mapDef.spawnPionts, "spanwPionts");
-        // Pool-exhaustion guard (pickUnqine drains the array and returns undefined when empty).
-        if (!raw && typeof GameInstance != "undefined" && GameInstance.terrain)
+        // Pass a COPY so pickUnqine drains the copy, never the original mapDef.spawnPionts
+        // (it splices the array it is given, which used to permanently empty the map def).
+        var raw = Utilies.pickUnqine(this.mapDef.spawnPionts.slice(), "spanwPionts");
+        // Pool-exhaustion guard: more worms than authored points. REUSE a random authored
+        // point (always on real terrain) instead of dropping at the map centre / sky, which
+        // could be over open water and drown the worm the instant it spawns.
+        if (!raw)
         {
-            raw = { x: GameInstance.terrain.getWidth() / 2, y: GameMap.SKY_TOP };
+            var pts = this.mapDef.spawnPionts;
+            if (pts && pts.length > 0)
+            {
+                raw = pts[Utilies.random(0, pts.length - 1)];
+            }
+            else if (typeof GameInstance != "undefined" && GameInstance.terrain)
+            {
+                raw = { x: GameInstance.terrain.getWidth() / 2, y: GameMap.SKY_TOP };
+            }
         }
         return this.validateSpawn(raw);
     }
@@ -66,6 +82,25 @@ class GameMap
         return true; // reached the top of the world == open sky
     }
 
+    // True when the ground under the worm's footprint is flat enough to stand on. The worm is a
+    // circle (radius ~12px), so a steep slope or a platform edge lets gravity roll it off - often
+    // straight into the sea. We sample the surface a little left and right of the spawn x and
+    // reject the spot if either side is a cliff (no ground / water) or drops/rises sharply.
+    static FOOT_HALF = 16;     // px each side of centre to test (covers the worm footprint)
+    static MAX_SLOPE_PX = 20;  // max surface height change across the footprint before it slides
+
+    static isStandable(x, surfaceY, waterY)
+    {
+        for (var s = -1; s <= 1; s += 2)
+        {
+            var nx = x + s * GameMap.FOOT_HALF;
+            var ns = GameMap.surfaceBelow(nx, surfaceY - 60);     // local surface beside the worm
+            if (ns == null || ns >= waterY) { return false; }     // cliff edge or water beside it
+            if (Math.abs(ns - surfaceY) > GameMap.MAX_SLOPE_PX) { return false; } // too steep -> slides
+        }
+        return true;
+    }
+
     validateSpawn(p)
     {
         if (!p) { p = { x: 3000, y: GameMap.SKY_TOP }; }
@@ -75,17 +110,23 @@ class GameMap
         var waterY = t.getWaterLine() - GameMap.WORM_BODY_PX;
         var minX = 40, maxX = t.getWidth() - 40;
 
-        // Try the authored x first, then nudge outward both ways to escape a roofed column.
+        // Try the authored x first, then nudge outward both ways to escape a roofed column or a
+        // steep edge. Pass 1 demands flat, standable ground; pass 2 relaxes the slope test so a
+        // very hilly map still spawns (better a small slide than a drop into the sea).
         var candidates = [p.x];
-        for (var d = 70; d <= 700; d += 70) { candidates.push(p.x + d); candidates.push(p.x - d); }
+        for (var d = 40; d <= 800; d += 40) { candidates.push(p.x + d); candidates.push(p.x - d); }
 
-        for (var i = 0; i < candidates.length; i++)
+        for (var pass = 0; pass < 2; pass++)
         {
-            var x = Math.max(minX, Math.min(maxX, candidates[i]));
-            var surface = GameMap.surfaceBelow(x, GameMap.SKY_TOP);
-            if (surface == null || surface >= waterY) { continue; }     // no land, or in the sea
-            if (!GameMap.hasOpenHeadroom(x, surface)) { continue; }      // roofed / sealed pocket
-            return { x: x, y: surface - GameMap.WORM_BODY_PX };          // drop in onto the surface
+            for (var i = 0; i < candidates.length; i++)
+            {
+                var x = Math.max(minX, Math.min(maxX, candidates[i]));
+                var surface = GameMap.surfaceBelow(x, GameMap.SKY_TOP);
+                if (surface == null || surface >= waterY) { continue; }     // no land, or in the sea
+                if (!GameMap.hasOpenHeadroom(x, surface)) { continue; }      // roofed / sealed pocket
+                if (pass == 0 && !GameMap.isStandable(x, surface, waterY)) { continue; } // steep/edge -> rolls off
+                return { x: x, y: surface - GameMap.WORM_BODY_PX };          // drop in onto the surface
+            }
         }
 
         // Fallback: clamp the original and lift it straight up to the first open sky.

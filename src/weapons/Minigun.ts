@@ -80,7 +80,7 @@ class Minigun extends RayWeapon
             if (this.fireRate.hasTimePeriodPassed())
             {
                 
-                var rayHit = Physics.shotRayWithFixture(this.worm.getMuzzlePosition(), this.worm.target.getTargetDirection().Copy(), this.worm.body);
+                var rayHit = Physics.shotRayWithFixture(this.worm.getRayOrigin(), this.worm.target.getTargetDirection().Copy(), this.worm.body);
                 if (rayHit)
                 {
                     var hitWorm = rayHit.body.GetUserData();

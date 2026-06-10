@@ -183,6 +183,21 @@ module Utilies
         }
     }
 
+    // Clear a drained pickUnqine pool (or all pools) so a new match re-seeds from a full
+    // set. The pools persist in module scope and are drained by reference, so without a
+    // reset a replay would reuse an emptied collection and hand back undefined.
+    export function resetUnqine(stringId?: string)
+    {
+        if (stringId)
+        {
+            delete pickUnqineCollection[stringId];
+        }
+        else
+        {
+            pickUnqineCollection = [];
+        }
+    }
+
 
     export function pickRandomSound(collection: string[])
     {

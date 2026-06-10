@@ -31,10 +31,14 @@ class Team
     constructor (playerId)
     {
 
-        this.color = Utilies.pickUnqine(["#FA6C1D", "#12AB00", "#B46DD2", "#B31A35", "#23A3C6","#9A4C44"], "colors");
-       
+        // Pick by team index (modulo) instead of the draining pickUnqine pools: those
+        // were seeded once, mutated by reference, never reset between matches, and ran
+        // out past 6 teams (returning undefined). Index-modulo never exhausts, never
+        // returns undefined, and is stable across replays. 8 colors cover the menu's max.
+        this.color = ["#FA6C1D", "#12AB00", "#B46DD2", "#B31A35", "#23A3C6", "#9A4C44", "#E8C400", "#3CE0C0"][Team.teamCount % 8];
+
         //Using strings instead of spriteDef to make it easier to sync across clients
-        this.graveStone = Utilies.pickUnqine(["grave1","grave2","grave3","grave4","grave5","grave6"], "gravestones");
+        this.graveStone = ["grave1", "grave2", "grave3", "grave4", "grave5", "grave6"][Team.teamCount % 6];
 
         this.name = "Team " + Team.teamCount;
         this.teamId = playerId;

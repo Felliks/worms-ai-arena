@@ -202,6 +202,19 @@ class Worm extends Sprite
         return Physics.vectorMetersToPixels(this.getMuzzlePosition());
     }
 
+    // Origin for hitscan (ray) weapons. body.GetPosition() is the worm's FEET (the circle
+    // fixture sits one radius above the body origin), and the collision circle is only ~24px
+    // tall (radius ~12px). The raised muzzle (feet - 28px) is ABOVE the head, so a ray fired
+    // from it flew over a same-height target and hit the terrain behind. Firing from the
+    // collision CENTRE (feet - radius) puts the ray at the same height as the target's centre
+    // and matches the agent's feet-to-feet aim, so point-blank shots actually connect.
+    getRayOrigin()
+    {
+        var pos = this.body.GetPosition().Copy();
+        pos.y -= this.fixture.GetShape().GetRadius();
+        return pos;
+    }
+
 
     // What happens when a worm collies with another object
     beginContact(contact)

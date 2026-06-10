@@ -104,7 +104,7 @@ class Shotgun extends RayWeapon
 
             if (this.fireAnimationIndex >= this.fireAnimations.length)
             {
-                var rayHit = Physics.shotRayWithFixture(this.worm.getMuzzlePosition(), this.worm.target.getTargetDirection().Copy(), this.worm.body);
+                var rayHit = Physics.shotRayWithFixture(this.worm.getRayOrigin(), this.worm.target.getTargetDirection().Copy(), this.worm.body);
                 if (rayHit)
                 {
                     var hitWorm = rayHit.body.GetUserData();
