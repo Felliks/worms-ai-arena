@@ -22,17 +22,9 @@
 }
 
 
-#startMenu {
-    position: absolute;
-    left: 50%;
-    top: 50%;
-    margin-left: -360px;
-    margin-top: -280px;
-    width: 600px;
-    height: 490px;
-    z-index: 1;
-}
-
+/* NOTE: the legacy fixed-size #startMenu box rule was removed. The boot splash
+   reuses id="startMenu" with class .wa-splash (css/menu.css), which is a
+   full-screen overlay; an id rule here would out-specify it and shrink it. */
 
 .btn-large {
     margin-left: 10px;
@@ -167,11 +159,11 @@ kbd {
 
 .healthMenu {
     position: absolute;
-    left: 50%;
-    bottom: 1%;
-    width: 150px;
+    left: 8px;
+    bottom: 8px;
+    width: auto;
+    max-width: 60vw;
     z-index: 1;
-    margin-left: -200px;
 }
 
     .healthMenu li {
@@ -231,21 +223,34 @@ kbd {
 #touchJump {
     margin-left: -200px;
 }
-
-#touchFire {
-    margin-left: -100px;
-}
+/* The Fire button's id is "touchFireButton"; the base .touchButton rule already
+   supplies its -100px offset, so no extra Fire-specific rule is needed. */
 
 #notifaction {
     text-align: center;
     z-index: 99;
     position: absolute;
-    top: -50px;
+    top: -80px;
     left: 50%;
-    margin-left: -250px;
-    width: 500px;
-    font-size: 17px;
-    border-color: black;
+    margin-left: -170px;
+    width: 340px;
+    font-size: 12px;
+    padding: 6px 14px;
+    border: 1px solid rgba(0, 0, 0, 0.2);
+    border-radius: 9px;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.28);
+}
+
+#notifaction strong {
+    display: block;
+    font-size: 13px;
+    line-height: 1.25;
+}
+
+#notifaction p {
+    margin: 1px 0 0;
+    font-size: 11px;
+    opacity: 0.82;
 }
 
 /* Themed front-menu background. The background-image is set inline by
@@ -282,3 +287,87 @@ kbd {
     #menuMusicToggle:hover {
         background: rgba(20, 16, 10, 0.85);
     }
+
+/* Worm "thought bubble" - the active agent's line shown over its head while it thinks.
+   Positioned in JS (ArenaController); team colour is set inline on the element. */
+.wa-bubble {
+    position: fixed;
+    left: 0;
+    top: 0;
+    max-width: 360px;
+    min-width: 88px;
+    padding: 7px 12px 9px;
+    background: rgba(14, 15, 22, 0.92);
+    border: 2px solid #ffffff;
+    border-radius: 14px;
+    color: #f6f7fb;
+    font-family: "Trebuchet MS", "Segoe UI", Sans-Serif;
+    z-index: 60;
+    pointer-events: none;
+    box-shadow: 0 7px 24px rgba(0, 0, 0, 0.5);
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.65);
+}
+
+.wa-bubble-name {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.3px;
+    margin-bottom: 2px;
+    opacity: 0.96;
+}
+
+.wa-bubble-text {
+    font-size: 14px;
+    line-height: 1.34;
+    word-wrap: break-word;
+    overflow-wrap: anywhere;
+    white-space: normal;
+}
+
+/* Thought-cloud tail: two shrinking circles trailing from the bubble toward the worm's head. */
+.wa-bubble-tail {
+    position: absolute;
+    left: 50%;
+    margin-left: -6px;
+    width: 12px;
+    height: 12px;
+    bottom: -15px;
+    background: rgba(14, 15, 22, 0.92);
+    border: 2px solid;
+    border-color: inherit;
+    border-radius: 50%;
+}
+
+.wa-bubble-tail::after {
+    content: "";
+    position: absolute;
+    left: 50%;
+    margin-left: -3.5px;
+    top: 14px;
+    width: 7px;
+    height: 7px;
+    background: rgba(14, 15, 22, 0.92);
+    border: 2px solid;
+    border-color: inherit;
+    border-radius: 50%;
+}
+
+/* When the bubble sits below the worm, the cloud trail points upward instead. */
+.wa-bubble.wa-bubble-below .wa-bubble-tail {
+    bottom: auto;
+    top: -15px;
+}
+
+.wa-bubble.wa-bubble-below .wa-bubble-tail::after {
+    top: auto;
+    bottom: 14px;
+}
+
+.wa-bubble.wa-bubble-in {
+    animation: waBubbleIn 180ms ease-out;
+}
+
+@keyframes waBubbleIn {
+    from { opacity: 0; transform: translateY(7px) scale(0.95); }
+    to   { opacity: 1; transform: translateY(0) scale(1); }
+}

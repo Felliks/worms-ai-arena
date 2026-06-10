@@ -30,7 +30,6 @@ class Waves
     //TODO pre-render waves
     drawBackgroundWaves(ctx, x, y, w)
     {
-       y -= 35;
        ctx.fillRect(x,y,w,400);
        var waveY = y - this.wave.getFrameHeight() * 0.5;
 

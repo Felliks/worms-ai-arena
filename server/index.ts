@@ -2,13 +2,18 @@ import "dotenv/config";
 import express from "express";
 import fs from "node:fs";
 import path from "node:path";
-import { decideTurn, listModelsForConnection } from "./agent";
+import { decideTurnStream, listModelsForConnection } from "./agent";
 import { getAgentLogFile, logAgentEvent } from "./agent-log";
 
-const root = path.resolve(__dirname, "..");
+const serverParent = path.resolve(__dirname, "..");
+const defaultPublicRoot = path.basename(serverParent) === "dist" ? path.resolve(serverParent, "..") : serverParent;
+const root = path.resolve(process.env.PUBLIC_ROOT ?? defaultPublicRoot);
 const port = Number(process.env.PORT ?? 8787);
+const host = process.env.HOST ?? "127.0.0.1";
 
 const app = express();
+// Don't advertise the framework/version in responses.
+app.disable("x-powered-by");
 
 app.use(express.json({ limit: "25mb" }));
 
@@ -55,17 +60,47 @@ app.get("/api/health", (_req, res) => {
 app.post("/api/agent/turn", async (req, res, next) => {
   const requestId = String(req.body?.requestId || `agent-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
   const startedAt = Date.now();
+  // Stream the turn as newline-delimited JSON: zero or more {type:"say"} events the moment the
+  // worm's chat line is parsed from the model stream, then a single {type:"final", decision}.
+  // This lets the browser render the worm's taunt within ~2s instead of waiting the full decision.
+  res.setHeader("Content-Type", "application/x-ndjson; charset=utf-8");
+  res.setHeader("Cache-Control", "no-cache, no-transform");
+  res.setHeader("X-Accel-Buffering", "no");
+  const write = (obj: unknown) => {
+    res.write(JSON.stringify(obj) + "\n");
+    if (typeof (res as any).flush === "function") {
+      (res as any).flush();
+    }
+  };
   try {
     req.body.requestId = requestId;
     console.log(`[agent:${requestId}] HTTP request received`);
     saveVisionScreenshot(requestId, req.body);
-    const decision = await decideTurn(req.body);
-    console.log(`[agent:${requestId}] HTTP response ${Date.now() - startedAt}ms`);
+    let sayCount = 0;
+    let firstSayMs = -1;
+    const decision = await decideTurnStream(req.body, (text) => {
+      sayCount++;
+      if (firstSayMs < 0) {
+        firstSayMs = Date.now() - startedAt;
+      }
+      write({ type: "say", text });
+    });
+    write({ type: "final", decision });
+    res.end();
+    console.log(`[agent:${requestId}] HTTP response ${Date.now() - startedAt}ms (first-say=${firstSayMs}ms, early-say=${sayCount})`);
     console.log(logPayloadForConsole({ requestId, decision }));
-    res.json(decision);
   } catch (error) {
     console.error(`[agent:${requestId}] HTTP error ${Date.now() - startedAt}ms`);
-    next(error);
+    if (res.headersSent) {
+      try {
+        write({ type: "error", error: (error as Error).message });
+      } catch {
+        // socket already gone
+      }
+      res.end();
+    } else {
+      next(error);
+    }
   }
 });
 
@@ -98,8 +133,13 @@ app.use("/api", (error: Error, _req: express.Request, res: express.Response, _ne
 app.use(
   express.static(root, {
     extensions: ["htm", "html"],
+    // Dev server: always revalidate so a freshly rebuilt bundle/CSS is never served stale from
+    // the browser cache (etag still yields cheap 304s for unchanged assets).
+    etag: true,
     setHeaders(res) {
       res.setHeader("Cross-Origin-Resource-Policy", "same-origin");
+      res.setHeader("X-Content-Type-Options", "nosniff");
+      res.setHeader("Cache-Control", "no-cache");
     }
   })
 );
@@ -108,7 +148,7 @@ app.get("/", (_req, res) => {
   res.sendFile(path.join(root, "index.htm"));
 });
 
-app.listen(port, "127.0.0.1", () => {
-  console.log(`LLM Worms Arena running at http://127.0.0.1:${port}/`);
+app.listen(port, host, () => {
+  console.log(`LLM Worms Arena running at http://${host}:${port}/`);
   console.log(`Agent log file: ${getAgentLogFile()}`);
 });

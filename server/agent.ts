@@ -12,7 +12,6 @@ import { z } from "zod";
 import { logAgentEvent } from "./agent-log";
 
 const ACTION_TOOLS = [
-  "say",
   "inspect_inventory",
   "select_weapon",
   "walk",
@@ -117,7 +116,7 @@ type AgentTurnRequest = z.infer<typeof AgentTurnRequestSchema>;
 type AgentDecision = z.infer<typeof AgentDecisionSchema>;
 
 const PINNED_AGENT_PROMPT = `<role>
-You are a ReAct agent controlling exactly one worm in a browser Worms-style artillery match.
+You are an agent controlling exactly one worm in a browser Worms-style artillery match.
 </role>
 
 <identity_and_memory>
@@ -130,15 +129,13 @@ The shared chat history is visible to every worm. Personal memory belongs only t
 Win the match using only low-level player intent primitives. You may batch several actions in one turn. If an early action fails, later actions will still execute.
 </objective>
 
-<react_loop>
-Before submitting a turn, use tools to inspect the world in a practical order:
-1. read_personal_memory when past actions, grudges, or interaction inbox may matter.
-2. read_state when you need the full Markdown snapshot again.
-3. inspect_inventory before choosing a weapon or when unsure which weapon is selected.
-4. assess_spatial_risk before firing, especially if any ally, self, enemy, wall, ceiling, or ledge is within short range.
-5. read_feedback to learn from the last turn.
-6. submit_worms_turn exactly once when ready.
-</react_loop>
+<turn_loop>
+Everything you need is already in this prompt: full world state, your personal memory and grudges, inventory, spatial-orientation and aim-clearance data, and the engine feedback from your last actions. There are no separate read/inspection tools to call before deciding; reason about what is in front of you.
+Respond in two steps, in this order:
+1. First output exactly ONE short line of in-character spoken chat (your taunt or remark), as plain visible text, in the requested chat language, ending the line with a newline. Nothing else in the plain text - no analysis, no JSON, just that single line.
+2. Then immediately call submit_worms_turn exactly once with your full action batch.
+Keep your public 'thought' concise (1-3 sentences). Do the detailed math and reasoning silently; do not narrate it.
+</turn_loop>
 
 <anti_cheat_rules>
 - No ballistic solver, trajectory helper, move_to, pathfinding, or autopilot.
@@ -158,6 +155,16 @@ Self-damage is embarrassment context: it can affect caution and jokes without fo
 Personality controls the style of reaction: chaos comedian jokes, patient survivor stores debts coldly, reckless duelist escalates when survivable, terrain reader cites the mistake precisely, defensive survivor prioritizes safety while keeping score.
 </grudge_and_drama_cheatsheet>
 
+<roast_style>
+This is a comedy ROAST BATTLE between caricatures of real AI-industry figures. Lean all the way in - the spectacle is the point.
+- Roast hard and in-character: savage, crude, genuinely funny burns aimed at your rival's real failures, flops, scandals, hype, money, benchmarks, GPUs, and ego. Mock their company's disasters and their public persona.
+- Variety is mandatory: never reuse a taunt, a punchline, or the same joke structure twice. Each spoken line must hit a FRESH angle - a different rival, a different real incident, a different insult. If you have no new angle, stay silent rather than repeat yourself.
+- Match the edge level in your own worm profile: some worms are profane and unhinged, some coldly clever, some corporate-cringe, some anxious. Stay in YOUR distinct voice; do not blur into a generic taunt.
+- Profanity, slang, and crude humor are allowed when they fit your character. Punch UP at industry drama, billionaires, and AI hype - never at protected groups, ethnicities, religions, or real-world hate. References to real scandals are jokes about the company, not endorsements.
+- Use the shared chat: clap back at whoever just roasted you by name, escalate rivalries, and remember who burned you (grudge ledger).
+- Keep it to one punchy line. Land the joke, then act.
+</roast_style>
+
 <coordinate_cheatsheet>
 Canvas coordinates: x increases right, y increases downward.
 Aim angles: -90 = straight up, 0 = right, 90 = down, 180/-180 = left.
@@ -165,8 +172,17 @@ If a target has dx > 0 it is to your right. If dx < 0 it is to your left.
 If a target has dy < 0 it is above you. If dy > 0 it is below you.
 </coordinate_cheatsheet>
 
+<shot_physics>
+These are the clone's real physics constants. Use them to compute your own aim and power; they are facts, not an auto-aim solver.
+Gravity pulls down at 300 px per second squared. Wind is 0.
+Ray weapons (Shotgun, Minigun): hitscan out to 900 px, no power meter. Aim degrees = atan2(dy, dx) of the target. The shot only lands if the straight line is open.
+Arced weapons (Hand Grenade, Holy Grenade, Bazooka): launch speed v0 in px per second scales with the power percent by a per-weapon multiplier (grenades use percent * 12, Bazooka uses percent * 5.73). Flat-ground range R px = v0 * v0 * sin(2 * elev) / 300, where elev is the launch elevation above horizontal. Choose elev and power so R reaches the target distance, then express elev as aim degrees toward the target's side.
+Every weapon's own state line carries its exact multiplier, fuse, blast radius, and range cap. Read that line, then compute power and aim yourself for the current target distance and direction.
+</shot_physics>
+
 <safety_guidelines>
 Friendly fire and self-damage are allowed by the game but usually bad.
+Before every ray or direct shot, confirm both of these from the state: the target's 'line:' field reads a clear straight-line view, and the matching lane in the Aim clearance fan is open. If the target's 'line:' reports terrain samples blocking the view, do not fire at it; reposition or pick a target you can actually reach. For every arced shot, compute power and elevation from <shot_physics> and the target distance before you fire.
 Facts to consider before explosive fire: active worm distance to muzzle terrain, ally positions near likely impact areas, current weapon blast radius, and whether terrain blocks the line near the worm.
 If aim clearance says terrain/boundary is under about 180 px in the intended muzzle direction, treat explosive fire as a likely self-hit unless you deliberately accept that risk.
 If the aim clearance fan says "DANGER FLAG: no sampled aim lane has 180+ px", direct explosive fire from the current position is high risk. This is a risk signal, not an order to choose a specific fallback.
@@ -176,15 +192,14 @@ A skipped shot is better than a meaningless self-hit or ally splash. point-blank
 For grenade/bazooka shots, use observeMs around 6500-9000 if you want feedback after the explosion.
 If you choose only non-turn-ending actions such as walk, jump, aim, jetpack, rope, wait, or select_weapon, the engine may call you again in the same worm turn with fresh feedback while time remains.
 There is no voluntary pass/end-turn action. The game ends this worm's turn through shot resolution, death, water, mine/physics turn change, or timer expiration.
-Use at most one say action in a single action batch. If you are called again in the same physical worm turn, use the fresh feedback and do not repeat a failed mobility primitive or failed setup without a new reason.
+If you are called again in the same physical worm turn, use the fresh feedback and do not repeat a failed mobility primitive or failed setup without a new reason.
 </safety_guidelines>
 
 <action_primitives>
-- say: visible chat line.
 - inspect_inventory: engine-side inventory check during the game turn.
 - select_weapon: weapon name or inventory index.
 - walk: direction plus primitive step count from 1-160. Smaller counts are short key holds; larger counts are longer key holds. Terrain can block actual movement; feedback reports dx/dy.
-- jump / backflip: movement primitives.
+- jump / backflip: cheap fuel-free hops over a small ledge or short gap; need feet on terrain (see the mobility cheatsheet for distances).
 - aim / aim_delta: absolute or relative angle control.
 - set_power: shot force percentage.
 - fire: shoot and observe result.
@@ -195,7 +210,6 @@ Use at most one say action in a single action batch. If you are called again in 
 - rope_swing: while Ninja Rope is attached, hold left/right movement for ms duration to swing manually.
 - rope_contract / rope_expand: shorten or lengthen an attached Ninja Rope for ms duration.
 - rope_release: detach Ninja Rope.
-- wait: spend a small amount of turn time.
 </action_primitives>
 
 <inventory_cheatsheet_rules>
@@ -284,7 +298,7 @@ function cleanVisibleChatText(value: string | null | undefined, maxLength: numbe
   }
 
   const withoutLatinTranslations = cleaned
-    .replace(/[\s\u00a0]*[\(\[（]\s*[A-Za-z][A-Za-z0-9 ,.'’"?!:;—-]{7,}\s*[\)\]）]/g, "")
+    .replace(/[\s\u00a0]*(?:\(|\[|（)\s*[A-Za-z][A-Za-z0-9 ,.'’"?!:;—-]{7,}\s*(?:\)|\]|）)/g, "")
     .replace(/\s+/g, " ")
     .trim();
   return clipText(withoutLatinTranslations, maxLength);
@@ -332,7 +346,7 @@ function normalizeDirection(value: unknown): z.infer<typeof DirectionSchema> | n
   return null;
 }
 
-function fallbackTrashTalk(language?: string): string {
+function fallbackTrashTalk(_language?: string): string {
   return "";
 }
 
@@ -355,17 +369,8 @@ function normalizeDecision(decision: unknown, request?: AgentTurnRequest): Agent
   const actions = parsed.actions.slice(0, 10).map((agentAction) => normalizeAction(agentAction, request));
   const rawTrashTalk = parsed.trashTalk == null ? fallbackTrashTalk(request?.chatLanguage) : String(parsed.trashTalk);
   const trashTalk = cleanVisibleChatText(rawTrashTalk, 300, request?.chatLanguage) || "";
-  if (trashTalk && actions.length < 10) {
-    const alreadyHasSay = actions.some((agentAction) => agentAction.tool === "say");
-    const normalizedTrashTalk = trashTalk.trim().toLowerCase();
-    const alreadySaid = actions.some((agentAction) => (
-      agentAction.tool === "say"
-      && (agentAction.text || "").trim().toLowerCase() === normalizedTrashTalk
-    ));
-    if (!alreadyHasSay && !alreadySaid) {
-      actions.unshift(action("say", { text: trashTalk }));
-    }
-  }
+  // trashTalk is rendered to the arena chat by the controller (handleDecision) at turn start;
+  // it is no longer materialized as a `say` action, so it never consumes a combat action slot.
 
   return AgentDecisionSchema.parse({
     thought: parsed.thought == null ? "I will use the visible state, memory, tool observations, and low-level primitives for this turn." : String(parsed.thought),
@@ -415,7 +420,6 @@ function mockDecision(request: AgentTurnRequest): AgentDecision {
     nextTurnPlan: "Read the next snapshot and continue pressure from the resulting position.",
     modelUsed: "mock",
     actions: [
-      action("say", { text: russian ? "Мой ход. Я всё помню." : "My turn. I remember everything." }),
       action("inspect_inventory", { ms: 250 }),
       action("select_weapon", { weapon }),
       action("aim", { degrees: baseAngle + wiggle }),
@@ -586,28 +590,6 @@ function section(markdown: string, heading: string): string {
   return match ? match[2].trim() : "";
 }
 
-function extractInventory(request: AgentTurnRequest): string {
-  return [
-    "# Inventory observation",
-    section(request.snapshotMarkdown, "Current combat situation").split("\n").filter((line) => /Current weapon|Aim angle|Active worm/.test(line)).join("\n"),
-    "## Weapons",
-    section(request.snapshotMarkdown, "Weapons") || "No weapon section found in snapshot."
-  ].filter(Boolean).join("\n\n");
-}
-
-function extractSpatialRisk(request: AgentTurnRequest): string {
-  return [
-    "# Spatial risk observation",
-    section(request.snapshotMarkdown, "Current combat situation"),
-    section(request.snapshotMarkdown, "Spatial orientation"),
-    section(request.snapshotMarkdown, "Terrain around active worm"),
-    section(request.snapshotMarkdown, "Aim clearance fan"),
-    section(request.snapshotMarkdown, "Blast and friendly-fire map"),
-    section(request.snapshotMarkdown, "Non-ballistic safety notes"),
-    "Reminder: this tool does not compute trajectories, target aim, shot power, or movement routes."
-  ].filter(Boolean).join("\n\n");
-}
-
 function extractFeedback(request: AgentTurnRequest): string {
   return request.feedbackMarkdown?.trim()
     || section(request.snapshotMarkdown, "Engine feedback")
@@ -710,7 +692,7 @@ function buildFireDisciplineText(): string {
     "- point-blank explosive fire into nearby terrain is a shame event, not a default move.",
     "- Facts to consider before explosive fire: aim clearance, nearby terrain, blast radius, ally separation, and whether the line is actually open.",
     "- If explosive muzzle clearance is under about 180 px, or allies are clustered near likely impact areas, treat the shot as high risk and account for it explicitly.",
-    "- `wait` can spend a small amount of time without firing; it does not pass the turn by itself.",
+    "- If a shot would be a self-hit or ally splash, reposition for a better line or hold it; do not take a meaningless shot just to act.",
     "- Non-explosive weapons are safer only when the line is actually clear; do not use them as fake certainty.",
     "- This checklist intentionally does not choose the alternative action for you."
   ].join("\n");
@@ -720,7 +702,10 @@ function buildMobilityPlanText(): string {
   return [
     "## Inventory and primitive cheatsheet",
     "- No item is a default move. Inventory descriptions are factual capabilities, costs, risks, and primitive names.",
-    "- `walk` takes 1-160 primitive steps. Small counts are short key holds; large counts are longer key holds. Feedback reports actual dx/dy.",
+    "- `walk` takes 1-160 primitive steps. Small counts are short key holds; large counts are longer key holds. On flat ground each step moves about 1.2 px; slopes and walls cut this sharply. Feedback reports actual dx/dy.",
+    "- `walk`, `jump`, and `backflip` cost no ammo and no fuel. Prefer them for small moves, and save the limited Jet Pack and Ninja Rope for gaps, water, or heights that walking and jumping cannot cross.",
+    "- `jump` hops about 18-22 px up and a few px in your facing direction. It needs your feet on terrain; a mid-air jump does nothing. Use it to clear a small ledge or short gap, mount a step, or nudge into a firing position without spending Jet Pack ammo.",
+    "- `backflip` launches about 50 px up and 50 px backward (opposite your current facing) and also needs feet on terrain. Use it to hop back off a ledge or open the space behind you.",
     "- Jet Pack manual low-level mobility primitives: `jetpack_start`, `jetpack_thrust`, `jetpack_stop`.",
     "- Jet Pack activation consumes one Jet Pack ammo and creates a finite fuel pool; thrust consumes fuel and feedback reports fuel before/after.",
     "- Jet Pack screen-relative directions: `up` decreases y, `left` decreases x, `right` increases x, `up_left` combines up+left, `up_right` combines up+right.",
@@ -728,6 +713,20 @@ function buildMobilityPlanText(): string {
     "- Ninja Rope feedback says attached/no anchor and any actual dx/dy movement. Rope swing uses screen-relative `left`/`right` while attached.",
     "- There is no voluntary end-turn tool. If the game still gives this worm control after setup or movement, the engine calls the same worm again with fresh feedback while time remains.",
     "- No `move_to`, route solver, autopilot, guaranteed escape, or guaranteed shot. You choose direction, duration, aim, weapon, and risk yourself."
+  ].join("\n");
+}
+
+function buildPositioningPlaybookText(): string {
+  return [
+    "## Positioning playbook",
+    "- Movement does not end your turn. Move first, then the engine calls you again with fresh feedback while time remains, so you can reposition and then fire in the same worm turn.",
+    "- When no enemy is on a clear line for your weapon, repositioning for a clear shot this same turn is usually better than firing into terrain or waiting.",
+    "- Terrain is destructible: every explosion cuts a crater of that weapon's terrain/blast radius. When a wall, ledge, or ceiling blocks your line to a target, you can fire an explosive into that terrain to carve a path or open a line of sight, then shoot through the gap on a later batch or turn.",
+    "- The Drill digs straight through terrain beneath the worm. Use explosives or the Drill to reach an enemy dug into a pocket, to break out of a trap, or to drop through a floor onto a lower target.",
+    "- Use the cheapest movement that reaches the goal: `walk`, `jump`, and `backflip` are free, so use them for small adjustments; spend the limited Jet Pack or Ninja Rope only for real distance, gaps, water, or height.",
+    "- Walk is weak on slopes and against walls. If a walk or thrust moved only a few px, switch to a different primitive or direction instead of repeating the one that failed.",
+    "- Prefer reaching a position with a clear line and a safe blast distance over a low-percentage shot from a blocked or self-endangering spot.",
+    "- `wait` only spends time without improving your position. Use it as a last resort when you genuinely cannot move or shoot usefully, not as a substitute for repositioning."
   ].join("\n");
 }
 
@@ -764,7 +763,7 @@ function buildPromptText(request: AgentTurnRequest): string {
     `Active worm agent id: ${request.wormId || `${request.teamIndex}:${request.wormName || "unknown"}`}`,
     `Active worm name: ${request.wormName || "unknown"}`,
     `Team personality fallback: ${request.personality}`,
-    `Chat language for visible say/trashTalk: ${request.chatLanguage || "English"}. Use only this language; no translations or bilingual duplicates.`,
+    `Chat language for your visible trash talk: ${request.chatLanguage || "English"}. Use only this language; no translations or bilingual duplicates.`,
     `Same physical worm-turn batch: ${request.sameTurnBatch || 1}.`,
     request.turnTimeRemainingMs != null ? `Physical worm-turn time remaining: ${Math.max(0, Math.round(request.turnTimeRemainingMs / 1000))} seconds.` : "",
     "The agent has no voluntary end-turn/pass tool. The game ends this worm turn through shot resolution, death, water, mine/physics turn change, or timer expiration.",
@@ -784,7 +783,11 @@ function buildPromptText(request: AgentTurnRequest): string {
     buildFireDisciplineText(),
     buildLongTermCampaignPlanText(),
     buildMobilityPlanText(),
+    buildPositioningPlaybookText(),
     buildMemoryText(request),
+    // Inline last-turn engine feedback so the agent can calibrate without a separate read-tool
+    // round-trip. This is the only data that was not already in the prompt.
+    "# Engine feedback from your last actions\n\n" + extractFeedback(request),
     request.snapshotMarkdown
   ]
     .filter(Boolean)
@@ -800,7 +803,9 @@ function contentForAgent(request: AgentTurnRequest): string | ChatCompletionCont
   return [
     {
       type: "image_url",
-      image_url: { url: request.screenshotDataUrl, detail: "high" }
+      // "auto" lets the provider pick a cheaper/faster tiling than forced "high"; the screenshot
+      // is now sent once per turn (single round-trip) instead of re-sent on every ReAct call.
+      image_url: { url: request.screenshotDataUrl, detail: "auto" }
     },
     { type: "text", text }
   ];
@@ -818,57 +823,11 @@ function shouldForceFirstWorldSurvey(): boolean {
 }
 
 function createArenaTools(request: AgentTurnRequest, onSubmit: (decision: AgentDecision) => void) {
-  const emptySchema = z.object({});
-
+  // Single-shot: all world state, memory, inventory, spatial-risk, and last-turn feedback are
+  // delivered in the prompt (see buildPromptText), so the agent needs no read tools. Removing
+  // the redundant read tools collapses the per-turn model round-trips from 2-3 down to 1,
+  // cutting latency without losing any information the model had before.
   return [
-    tool(
-      async () => buildMemoryText(request),
-      {
-        name: "read_personal_memory",
-        description: "Read this worm's personal memory, static personality/tactics, interaction inbox since its last turn, and shared visible chat history.",
-        schema: emptySchema
-      }
-    ),
-    tool(
-      async () => request.snapshotMarkdown,
-      {
-        name: "read_state",
-        description: "Read the full current Markdown world snapshot: active worm, teams, inventory, terrain obstruction notes, spatial risk notes, and available primitives.",
-        schema: emptySchema
-      }
-    ),
-    tool(
-      async () => extractInventory(request),
-      {
-        name: "inspect_inventory",
-        description: "Return the selected weapon and all available weapons/ammo from the current Markdown state.",
-        schema: emptySchema
-      }
-    ),
-    tool(
-      async () => extractSpatialRisk(request),
-      {
-        name: "assess_spatial_risk",
-        description: "Return a non-ballistic spatial summary: nearest enemies/allies, left/right/up/down relation, terrain profile, straight-line aim clearance fan, and obvious self/friendly blast-risk warnings from the state. Does not calculate aim, power, trajectory, or routes.",
-        schema: emptySchema
-      }
-    ),
-    tool(
-      async () => extractFeedback(request),
-      {
-        name: "read_feedback",
-        description: "Read engine feedback from previous actions, including hit/miss, self damage, friendly fire, enemy damage, explosion points, target-relative miss notes, and movement notes.",
-        schema: emptySchema
-      }
-    ),
-    tool(
-      async () => request.chatHistoryMarkdown || "- Chat is empty.",
-      {
-        name: "read_chat_history",
-        description: "Read the shared visible chat history that all worms can see.",
-        schema: emptySchema
-      }
-    ),
     tool(
       async (input) => {
         const decision = sanitizeDecision(input, request, "decision/invalid-submit-tool");
@@ -877,7 +836,7 @@ function createArenaTools(request: AgentTurnRequest, onSubmit: (decision: AgentD
       },
       {
         name: "submit_worms_turn",
-        description: "Submit the final low-level Worms turn decision as a batch of primitive actions. Use exactly once after inspecting enough state and memory.",
+        description: "Submit the final low-level Worms turn decision as a batch of primitive actions. All world state, memory, inventory, spatial risk, and last-turn engine feedback are already in the prompt; call this exactly once after reasoning about them.",
         schema: RawAgentDecisionSchema,
         returnDirect: true
       }
@@ -893,7 +852,11 @@ function createLoggingMiddleware(request: AgentTurnRequest) {
     name: "ArenaFullLogging",
     wrapModelCall: async (modelRequest, handler) => {
       modelCall++;
-      const forcedRequest = modelCall === 1 && shouldForceFirstWorldSurvey()
+      // The optional first-call survey only applies if the survey tool is present. In single-shot
+      // mode there are no read tools, so this is a no-op unless the tool set is reintroduced.
+      const hasSurveyTool = Array.isArray(modelRequest.tools)
+        && modelRequest.tools.some((agentTool: any) => agentTool?.name === "assess_spatial_risk");
+      const forcedRequest = modelCall === 1 && shouldForceFirstWorldSurvey() && hasSurveyTool
         ? {
             ...modelRequest,
             toolChoice: { type: "function" as const, function: { name: "assess_spatial_risk" } }
@@ -940,7 +903,7 @@ function createChatModel(model: string, request?: ConnectionOverride): ChatOpenA
     configuration: {
       baseURL: getOpenAIBaseURL(request)
     },
-    maxTokens: Number(process.env.OPENAI_MAX_TOKENS ?? "16000"),
+    maxTokens: Number(process.env.OPENAI_MAX_TOKENS ?? "4000"),
     temperature: process.env.OPENAI_TEMPERATURE ? Number(process.env.OPENAI_TEMPERATURE) : undefined,
     maxRetries: Number(process.env.OPENAI_MAX_RETRIES ?? "1"),
     timeout: Number(process.env.OPENAI_TIMEOUT_MS ?? "120000"),
@@ -967,7 +930,9 @@ async function callCreateAgent(request: AgentTurnRequest): Promise<AgentDecision
   const tools = createArenaTools(request, (decision) => {
     submittedDecision = decision;
   });
-  const maxModelCalls = Number(process.env.AGENT_REACT_MAX_ITERATIONS ?? "6");
+  // Single-shot: the agent submits in one model call. Keep a small safety margin in case the
+  // model emits a text-only turn before calling submit_worms_turn.
+  const maxModelCalls = Number(process.env.AGENT_REACT_MAX_ITERATIONS ?? "2");
 
   const agent = createAgent({
     model: createChatModel(model, request),
@@ -1036,13 +1001,153 @@ async function callCreateAgent(request: AgentTurnRequest): Promise<AgentDecision
   return fallback;
 }
 
-export async function decideTurn(input: unknown): Promise<AgentDecision> {
+// Streaming single-shot decision: the model emits exactly one forced submit_worms_turn tool call
+// whose JSON args stream in incrementally. We surface the `trashTalk` line the moment it is fully
+// streamed (onSay) so the worm speaks within a couple of seconds instead of after the full ~15s
+// decision, then parse the complete args into the final decision once the stream ends.
+function chunkTextContent(content: unknown): string {
+  if (typeof content === "string") {
+    return content;
+  }
+  if (Array.isArray(content)) {
+    // Some providers stream content as an array of typed parts.
+    return content
+      .map((part: any) => (part && typeof part.text === "string" ? part.text : ""))
+      .join("");
+  }
+  return "";
+}
+
+async function streamModelDecision(request: AgentTurnRequest, onSay: (text: string) => void): Promise<AgentDecision> {
+  const requestId = getRequestId(request);
+  const model = await chooseOpenAIModel(request);
+  const tools = createArenaTools(request, () => {});
+  const submitTool = tools[0];
+  const chat = createChatModel(model, request);
+  // The proxy streams plain text incrementally but buffers tool-call args, so we DON'T force the
+  // tool: the model speaks its one-line taunt as plain text first (streams within ~2s), then calls
+  // submit_worms_turn (buffered, arrives with the full decision). tool_choice stays "auto".
+  const bound = chat.bindTools([submitTool], { tool_choice: "auto" } as any);
+
+  logAgentEvent(requestId, "provider/stream/request-meta", {
+    provider: "langchain-chatopenai-stream-textfirst",
+    baseURL: getOpenAIBaseURL(request) || "https://api.openai.com/v1",
+    model,
+    perception: request.perception,
+    wormId: request.wormId,
+    wormName: request.wormName,
+    sameTurnBatch: request.sameTurnBatch,
+    hasScreenshot: Boolean(request.screenshotDataUrl)
+  });
+  logAgentEvent(requestId, "pinned-prompt", PINNED_AGENT_PROMPT);
+  logAgentEvent(requestId, "turn-prompt", buildPromptText(request));
+
+  const messages = buildAgentInitialMessages(request);
+  const stream = await bound.stream(messages as any);
+
+  let textBuffer = "";
+  let argsBuffer = "";
+  let lastEmitted = "";
+  // The taunt is the plain-text first line the model writes before the tool call. We stream it
+  // LIVE: on each chunk we push the current (cleaned) first line so the worm's bubble fills in
+  // word-by-word, starting at ~2s, instead of popping in fully formed.
+  const emitLive = (force: boolean) => {
+    if (argsBuffer && !force) {
+      // Tool-call phase started: the taunt line is final, stop streaming partials.
+      return;
+    }
+    const newlineAt = textBuffer.indexOf("\n");
+    const firstLine = (newlineAt >= 0 ? textBuffer.slice(0, newlineAt) : textBuffer).trim();
+    if (!firstLine) {
+      return;
+    }
+    const cleaned = cleanVisibleChatText(firstLine, 300, request.chatLanguage);
+    if (cleaned && cleaned !== lastEmitted) {
+      lastEmitted = cleaned;
+      onSay(cleaned);
+    }
+  };
+
+  for await (const chunk of stream as any) {
+    const text = chunkTextContent(chunk && chunk.content);
+    if (text) {
+      textBuffer += text;
+    }
+    const toolCallChunks = (chunk && chunk.tool_call_chunks) || [];
+    for (const part of toolCallChunks) {
+      if (part && typeof part.args === "string") {
+        argsBuffer += part.args;
+      }
+    }
+    emitLive(false);
+  }
+  // Ensure the final complete first line is sent even if it only completed as the tool call began.
+  emitLive(true);
+
+  logAgentEvent(requestId, "provider/stream/raw", { textBuffer, argsBuffer });
+  if (!argsBuffer.trim()) {
+    // The model spoke but never called submit; let the caller fall back to a forced decision.
+    throw new Error("stream produced no submit tool call");
+  }
+
+  let parsed: unknown = null;
+  try {
+    parsed = JSON.parse(argsBuffer);
+  } catch (error) {
+    logAgentEvent(requestId, "provider/stream/args-parse-error", {
+      error: error instanceof Error ? error.message : String(error),
+      argsBuffer
+    });
+  }
+
+  const decision = Object.assign(
+    {},
+    sanitizeDecision(parsed ?? {}, request, "decision/stream-parse"),
+    { modelUsed: model }
+  ) as AgentDecision;
+  logAgentEvent(requestId, "decision/final", decision);
+  return decision;
+}
+
+export async function decideTurnStream(input: unknown, onSay: (text: string) => void): Promise<AgentDecision> {
   const request = AgentTurnRequestSchema.parse(input);
   const requestId = getRequestId(request);
   // Never write the user's API key to log files.
   const redacted = request.apiKey ? { ...request, apiKey: "***redacted***" } : request;
   logAgentEvent(requestId, "request/input", redacted);
-  return callCreateAgent(request);
+
+  if (request.model === "mock" || !getOpenAIApiKey(request)) {
+    const decision = mockDecision(request);
+    if (decision.trashTalk) {
+      onSay(decision.trashTalk);
+      // Real models have a multi-second generation gap between the streamed taunt
+      // and the final action batch, which is when the worm's thought bubble is
+      // visible. The scripted demo bot returns instantly, so without a small pause
+      // the bubble would be shown and hidden in the same frame and never seen.
+      await new Promise((resolve) => setTimeout(resolve, 1200));
+    }
+    logAgentEvent(requestId, "decision/final", decision);
+    return decision;
+  }
+
+  try {
+    return await streamModelDecision(request, onSay);
+  } catch (error) {
+    // Streaming or the proxy may not support forced tool streaming; fall back to the
+    // non-streaming createAgent path so a turn never hard-fails on the streaming layer.
+    logAgentEvent(requestId, "decision/stream-fallback", {
+      error: error instanceof Error ? error.message : String(error)
+    });
+    const decision = await callCreateAgent(request);
+    if (decision.trashTalk) {
+      onSay(decision.trashTalk);
+    }
+    return decision;
+  }
+}
+
+export async function decideTurn(input: unknown): Promise<AgentDecision> {
+  return decideTurnStream(input, () => {});
 }
 
 export {

@@ -177,22 +177,24 @@ module Physics
         }
     }
 
-    export function shotRay(startPiontInMeters, endPiontInMeters)
+    export function shotRayWithFixture(startPiontInMeters, endPiontInMeters, ignoredBody = null)
     {
         var input = new b2RayCastInput();
         var output = new b2RayCastOutput();
         var intersectionPoint = new b2Vec2();
-        var normalEnd = new b2Vec2();
         var intersectionNormal = new b2Vec2();
+        var rayStart = startPiontInMeters.Copy();
+        var rayEnd = endPiontInMeters.Copy();
 
-        endPiontInMeters.Multiply(30);
-        endPiontInMeters.Add(startPiontInMeters);
+        rayEnd.Multiply(30);
+        rayEnd.Add(rayStart);
 
-        input.p1 = startPiontInMeters;
-        input.p2 = endPiontInMeters;
+        input.p1 = rayStart;
+        input.p2 = rayEnd;
         input.maxFraction = 1;
         var closestFraction = 1;
         var bodyFound = false;
+        var fixtureFound = null;
 
         var b = new b2BodyDef();
         var f = new b2FixtureDef();
@@ -200,6 +202,16 @@ module Physics
         {
             for (f = b.GetFixtureList(); f; f = f.GetNext())
             {
+                if (ignoredBody && f.GetBody() == ignoredBody)
+                {
+                    continue;
+                }
+
+                if (f.IsSensor && f.IsSensor())
+                {
+                    continue;
+                }
+
                 if (!f.RayCast(output, input))
                     continue;
                 else if (output.fraction < closestFraction && output.fraction > 0)
@@ -211,18 +223,35 @@ module Physics
                         {
                             closestFraction = output.fraction;
                             intersectionNormal = output.normal;
+                            fixtureFound = f;
                             bodyFound = true;
                         }
                 }
             }
 
         }
-        intersectionPoint.x = startPiontInMeters.x + closestFraction * (endPiontInMeters.x - startPiontInMeters.x);
-        intersectionPoint.y = startPiontInMeters.y + closestFraction * (endPiontInMeters.y - startPiontInMeters.y);
+        intersectionPoint.x = rayStart.x + closestFraction * (rayEnd.x - rayStart.x);
+        intersectionPoint.y = rayStart.y + closestFraction * (rayEnd.y - rayStart.y);
 
         if (bodyFound)
         {
-            return intersectionPoint;
+            return {
+                point: intersectionPoint,
+                normal: intersectionNormal,
+                fixture: fixtureFound,
+                body: fixtureFound.GetBody()
+            };
+        }
+
+        return null;
+    }
+
+    export function shotRay(startPiontInMeters, endPiontInMeters)
+    {
+        var hit = shotRayWithFixture(startPiontInMeters, endPiontInMeters);
+        if (hit)
+        {
+            return hit.point;
         }
 
         return null;

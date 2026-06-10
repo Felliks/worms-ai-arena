@@ -213,21 +213,36 @@ class ThrowableWeapon extends BaseWeapon
         Physics.world.DestroyBody(this.body);
 
         this.deactivate();
-        this.worm.team.weaponManager.getListOfWeapons()[6].deactivate();
     }
 
     update()
     {
         if (this.getIsActive())
         {
+            // Water sinks the projectile: no bounce off the world floor, no explosion - it is gone.
+            if (this.body && typeof GameInstance != "undefined" && GameInstance.terrain
+                && Physics.metersToPixels(this.body.GetPosition().y) > GameInstance.terrain.getWaterLine())
+            {
+                this.sinkInWater();
+                return;
+            }
+
             //Checks if its time for the bomb to explode
             if (this.detonationTimer.hasTimePeriodPassed())
             {
                 this.detonate();
-            }  
+            }
 
              this.detonationTimer.update();
-        }     
+        }
+    }
+
+    sinkInWater()
+    {
+        GameInstance.state.tiggerNextTurn();
+        Physics.removeToFastAcessList(this.body);
+        Physics.world.DestroyBody(this.body);
+        this.deactivate();
     }
 
 
@@ -258,7 +273,7 @@ class ThrowableWeapon extends BaseWeapon
             ctx.drawImage(ThrowableWeapon.numberBox, 10,-40);
             ctx.fillStyle = 'rgba(255,0,0,255)';
 
-            var secoundsLeft =  Math.floor(this.detonationTimer.getTimeLeftInSec() / 10);
+            var secoundsLeft =  Math.ceil(this.detonationTimer.getTimeLeftInSec());
 
             if (secoundsLeft < 0)
             {

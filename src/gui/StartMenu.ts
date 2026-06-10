@@ -24,9 +24,8 @@ class StartMenu
     constructor()
     {
         //TODO gamepad controls
-        //<img style="width:80%" src="data/images/menu/xbox360controls.png"><h2>Or</h2>
         this.controlsView = '<div style="text-align:center">' +
-            ' <p>Just incase you have never played the original worms armageddon, its a turn base deathmatch game. Where you control a team of worms. Use whatever weapons you have to destroy the enemy. <p><br>' +
+            ' <p>This is a turn-based artillery deathmatch. Control a team, aim carefully, and use your available weapons to destroy the enemy. <p><br>' +
             '<p><kbd> Space' +
             '</kbd>  <kbd> ' + String.fromCharCode(Controls.walkLeft.keyboard) +
             '</kbd> <kbd> ' + String.fromCharCode(Controls.walkRight.keyboard) +
@@ -55,30 +54,51 @@ class StartMenu
 
         var _this = this;
         StartMenu.callback = callback;
+
+        // Short, on-theme loading flavour (rotates while assets stream in).
+        var loadTips = [
+            "Tip: there is no wind here — blame the model, not the breeze.",
+            "Tip: high ground wins arguments and artillery duels.",
+            "Tip: the Demo bot needs no API key — just hit Play.",
+            "Tip: a grenade's fuse does not care about your reasoning chain.",
+            "Tip: give a vision model a screenshot and it reads the battlefield.",
+            "Tip: never stand next to the dynamite you just placed.",
+            "Tip: connect any OpenAI-compatible endpoint from the menu.",
+            "Tip: worms drown — plan your knockbacks."
+        ];
+
         if (!Settings.DEVELOPMENT_MODE)
         {
+            var tipIdx = 0;
+            var tick = 0;
             var loading = setInterval(() =>
             {
-
-                $('#notice').empty();
-                if (AssetManager.getPerAssetsLoaded() >= 100)
+                var loaded = AssetManager.getPerAssetsLoaded();
+                var pct = Math.max(0, Math.min(100, Math.round(loaded)));
+                if (loaded >= 100)
                 {
                     clearInterval(loading);
+                    $('#notice .wa-load-bar').css('width', '100%');
+                    $('#notice .wa-load-pct').text('100%');
                     if (Settings.ARENA_AUTO_START)
                     {
                         callback();
                         return;
                     }
-                    // Hand off to the themed Worms-style main menu.
+                    // Hand off to the themed main menu.
                     MainMenu.show(callback);
                     return;
-                } else
-                {
-                    $('#notice').append('<div class="alert alert-info" style="text-align:center"> <strong> Stand back! I\'m loading game assets! </strong>' +
-                    '<div class="progress progress-striped active"><div class="bar" style="width: ' + AssetManager.getPerAssetsLoaded() + '%;"></div></div></div> ');
                 }
 
-            }, 500);
+                $('#notice .wa-load-bar').css('width', pct + '%');
+                $('#notice .wa-load-pct').text(pct + '%');
+                if (tick % 6 === 0)
+                {
+                    $('#notice .wa-load-tip').text(loadTips[tipIdx % loadTips.length]);
+                    tipIdx++;
+                }
+                tick++;
+            }, 300);
 
 
             $('#startLocal').click(() =>

@@ -107,7 +107,7 @@ class GameLobby
             GameInstance.start();
         });
 
-        Client.socket.on(Events.gameLobby.PLAYER_DISCONNECTED, function (playerId)
+        Client.socket.on(Events.gameLobby.PLAYER_DISCONNECTED, (playerId) =>
         {
             Logger.log("Events.gameLobby.PLAYER_DISCONNECTED " + playerId);
 
@@ -131,6 +131,7 @@ class GameLobby
                     //If the user who disconnected is the current one signal next turn
                     if (GameInstance.players[j].id == GameInstance.state.getCurrentPlayer().id)
                     {
+                        this.assignTurnAuthorityAfterDisconnect(playerId);
                         GameInstance.state.tiggerNextTurn();
                     }
                     return;
@@ -140,6 +141,24 @@ class GameLobby
 
 
 
+    }
+
+    assignTurnAuthorityAfterDisconnect(playerId)
+    {
+        var replacement = null;
+        for (var i = 0; i < GameInstance.players.length; i++)
+        {
+            if (GameInstance.players[i].id != playerId && GameInstance.players[i].getTeam().getPercentageHealth() > 0)
+            {
+                replacement = GameInstance.players[i];
+                break;
+            }
+        }
+
+        if (replacement)
+        {
+            GameInstance.lobby.client_GameLobby.currentPlayerId = replacement.id;
+        }
     }
 
     contains(playerId: string) : bool

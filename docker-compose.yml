@@ -1,0 +1,15 @@
+services:
+  arena:
+    build:
+      context: .
+    image: llm-worms-arena:local
+    ports:
+      - "8787:8787"
+    environment:
+      HOST: 0.0.0.0
+      PORT: 8787
+      PUBLIC_ROOT: /app
+      AGENT_LOG_DIR: /app/logs
+      AGENT_CONSOLE_LOGS: "false"
+    volumes:
+      - ./logs:/app/logs

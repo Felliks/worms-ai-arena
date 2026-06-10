@@ -1,0 +1,74 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Setup Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Format check
+        run: npm run format:check
+
+      - name: Dependency audit
+        run: npm run audit
+
+      - name: Run tests
+        run: npm test
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Build
+        run: npm run build
+
+      - name: Install Playwright browser
+        run: npx playwright install --with-deps chromium
+
+      - name: Browser QA
+        # Deterministic, key-free smoke: the "mock" model drives the scripted bot.
+        env:
+          QA_MODELS: mock,mock
+        run: npm run qa:browser
+
+      - name: Docker build
+        run: docker build -t llm-worms-arena:ci .
+
+      - name: Docker smoke test
+        run: |
+          docker run -d --name wa-ci -p 8787:8787 llm-worms-arena:ci
+          ready=""
+          for _ in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:8787/api/health >/dev/null; then ready=1; break; fi
+            sleep 2
+          done
+          if [ -z "$ready" ]; then echo "container did not become healthy"; docker logs wa-ci; docker rm -f wa-ci; exit 1; fi
+          # The page and a required vendored runtime asset must both be served
+          # (catches gitignored-but-needed static files like external/Tone.js).
+          curl -fsS http://127.0.0.1:8787/ | grep -q "LLM Worms Arena"
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8787/external/Tone.js)" = "200"
+          docker rm -f wa-ci

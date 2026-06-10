@@ -135,7 +135,7 @@ module AssetManager
         }
         missingAssetHintShown = true;
         Logger.error("Asset pack '" + Settings.ASSET_PACK + "' is missing files (e.g. " + url +
-            "). Run `npm run fetch:assets:original` to install the original Worms assets locally. Falling back to placeholders.");
+            "). Add the missing files to data/ or the active custom asset pack. Falling back to placeholders.");
     }
 
     export function loadImages(sources)

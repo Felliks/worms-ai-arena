@@ -35,7 +35,7 @@ module Settings
     // http://westciv.com/tools/manifestR/
     export var BUILD_MANIFEST_FILE = false;
 
-    export var REMOTE_ASSERT_SERVER = "./"; //"../college/fyp/"
+    export var REMOTE_ASSERT_SERVER = "./";
 
     // Asset pack selection.
     // "default"  -> bundled placeholder assets in data/ (current behaviour).
@@ -72,6 +72,11 @@ module Settings
     export var ARENA_MEMORY_WINDOW = 14;
     export var ARENA_MEMORY_STRATEGY = "sliding";
     export var ARENA_MAX_BATCHES_PER_TURN = 4;
+    // Verbose per-turn agent JSON is mirrored to the browser console only when
+    // this is on (enable with ?arenaDebug=true). Server-side event logs are
+    // always written regardless, so default-off just keeps the public build's
+    // devtools console clean.
+    export var ARENA_DEBUG_LOGS = false;
 
     export var NETWORKED_GAME_QUALITY_LEVELS = {
         HIGH: 0,
@@ -98,12 +103,9 @@ module Settings
             DEVELOPMENT_MODE = true;
         }
 
-        if (argv[commands[2]] == "true")
-        {
-           var testWindow = window.open('test.html', '|UnitTests', 'height=1000,width=700,top:100%');
-           testWindow.location.reload(); // This is so if the window was left open it refreshs
-            
-        }
+        // The legacy QUnit "?unitTest=true" launcher (and test.html) were removed;
+        // tests now live in tests/*.test.ts (vitest). The "unitTest" entry stays in
+        // the commands array above so later index-based lookups keep their offsets.
 
         if (argv[commands[3]] == "false")
         {
@@ -189,6 +191,11 @@ module Settings
         if (argv[commands[17]])
         {
             ASSET_PACK = decodeURIComponent(argv[commands[17]]);
+        }
+
+        if (argv["arenaDebug"] == "true")
+        {
+            ARENA_DEBUG_LOGS = true;
         }
 
         Logger.log(" Notice: argv are as follows " + commands);

@@ -31,8 +31,8 @@ module Effects
             ArenaTelemetry.recordExplosion(epicenter, explosionRadius, maxDamage, entityThatCausedExplosion);
         }
 
-        var posX = Physics.metersToPixels(Math.floor(epicenter.x));
-        var posY = Physics.metersToPixels(Math.floor(epicenter.y));
+        var posX = Physics.metersToPixels(epicenter.x);
+        var posY = Physics.metersToPixels(epicenter.y);
 
         GameInstance.terrain.addToDeformBatch(posX,posY,explosionRadius);
 
@@ -53,8 +53,6 @@ module Effects
                     affectedWorms.push(worm);
 
                     var direction = fixture.GetBody().GetPosition().Copy();
-                    direction.x = Math.floor(direction.x);
-                    direction.y = Math.floor(direction.y);
                     direction.Subtract(epicenter);
                     var forceVec = direction.Copy();
 
@@ -66,7 +64,11 @@ module Effects
                     }
 
                     var distanceFromEpicenter = diff / effectedRadius;
-                    worm.hit(maxDamage * distanceFromEpicenter, entityThatCausedExplosion)
+                    var damage = maxDamage * distanceFromEpicenter;
+                    if (damage > 0)
+                    {
+                        worm.hit(damage, entityThatCausedExplosion)
+                    }
 
                     forceVec.Normalize();
                     forceVec.Multiply(explosiveForce*distanceFromEpicenter);

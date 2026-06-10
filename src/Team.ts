@@ -42,7 +42,7 @@ class Team
 
         this.weaponManager = new WeaponManager();
 
-        this.currentWorm = 0;
+        this.currentWorm = -1;
         // Configurable via the menu (Settings.WORMS_PER_TEAM); defaults to 4.
         this.initalNumberOfWorms = (typeof Settings != "undefined" && Settings.WORMS_PER_TEAM > 0) ? Settings.WORMS_PER_TEAM : 4;
 
@@ -106,21 +106,22 @@ class Team
 
     nextWorm()
     {
-        if (this.currentWorm + 1 == this.worms.length)
+        for (var attempts = 0; attempts < this.worms.length; attempts++)
         {
-            this.currentWorm = 0;
-        }
-        else
-        {   
-            this.currentWorm++;
-        }
+            if (this.currentWorm + 1 == this.worms.length)
+            {
+                this.currentWorm = 0;
+            }
+            else
+            {   
+                this.currentWorm++;
+            }
 
-        if (this.worms[this.currentWorm].isDead)
-        {
-            this.nextWorm();
-        } else
-        {
-            this.worms[this.currentWorm].activeWorm();
+            if (this.worms[this.currentWorm].isDead == false)
+            {
+                this.worms[this.currentWorm].activeWorm();
+                return;
+            }
         }
 
     }

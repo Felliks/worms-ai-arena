@@ -57,7 +57,23 @@ class ArenaController
     // or null for the legacy ?arena= URL launch path.
     getRuntime()
     {
-        return (typeof ArenaConfig != "undefined" && ArenaConfig.runtime) ? ArenaConfig.runtime : null;
+        if (typeof ArenaConfig != "undefined" && ArenaConfig.runtime)
+        {
+            return ArenaConfig.runtime;
+        }
+        // ?arena= URL auto-start has no menu config: seed a default runtime from the built-in
+        // roster so team/worm names, personas, and colors come from DEFAULT_TEAMS rather than the
+        // engine's default human names.
+        if (typeof ArenaConfig != "undefined" && ArenaConfig.buildDefaultRuntime)
+        {
+            if (!this.defaultRuntime)
+            {
+                var count = (Settings.ARENA_TEAM_TYPES && Settings.ARENA_TEAM_TYPES.length > 0) ? Settings.ARENA_TEAM_TYPES.length : 2;
+                this.defaultRuntime = ArenaConfig.buildDefaultRuntime(count, Settings.ARENA_CHAT_LANGUAGE);
+            }
+            return this.defaultRuntime;
+        }
+        return null;
     }
 
     configureTeams()
@@ -183,7 +199,7 @@ class ArenaController
         }
 
         var worm = player.getTeam().getCurrentWorm();
-        var turnKey = player.id + ":" + worm.name + ":" + player.getTeam().currentWorm;
+        var turnKey = this.aiPhysicalTurnKey(player, worm);
         if (turnKey == this.lastTurnKey)
         {
             return;
@@ -200,7 +216,7 @@ class ArenaController
         var player = this.game.players[playerIndex];
         var worm = player.getTeam().getCurrentWorm();
         var wormId = this.wormId(playerIndex, worm.name);
-        var turnKey = physicalTurnKey || (player.id + ":" + worm.name + ":" + player.getTeam().currentWorm);
+        var turnKey = physicalTurnKey || this.aiPhysicalTurnKey(player, worm);
         var sameTurnBatch = this.registerSameTurnBatch(turnKey);
         var remainingTurnMs = this.physicalTurnRemainingMs(turnKey);
         if (remainingTurnMs <= 0)
@@ -289,6 +305,7 @@ class ArenaController
             memoryStrategy: Settings.ARENA_MEMORY_STRATEGY,
             memoryWindow: Settings.ARENA_MEMORY_WINDOW,
             sameTurnBatch: sameTurnBatch,
+            maxSameTurnBatches: Settings.ARENA_MAX_BATCHES_PER_TURN,
             turnTimeRemainingMs: remainingTurnMs,
             model: resolvedModel,
             perception: config.perception,
@@ -326,27 +343,29 @@ class ArenaController
         })
             .then((response) =>
             {
-                return response.text().then((text) =>
+                if (!response.ok)
                 {
-                    var httpPayload = {
-                        requestId: requestId,
-                        status: response.status,
-                        ok: response.ok,
-                        responseText: text
-                    };
-                    this.debug("agent/http-response", httpPayload);
-                    this.postAgentEvent("agent-http-response", httpPayload);
-
-                    if (!response.ok)
+                    return response.text().then((text) =>
                     {
+                        var httpPayload = {
+                            requestId: requestId,
+                            status: response.status,
+                            ok: response.ok,
+                            responseText: text
+                        };
+                        this.debug("agent/http-response", httpPayload);
+                        this.postAgentEvent("agent-http-response", httpPayload);
                         throw new Error("HTTP " + response.status + " from " + Settings.ARENA_AGENT_ENDPOINT + ": " + text);
-                    }
-
-                    return JSON.parse(text);
-                });
+                    });
+                }
+                return this.consumeDecisionStream(response, requestId, turnContext);
             })
             .then((decision) =>
             {
+                if (!decision)
+                {
+                    return;
+                }
                 if (!this.isAiTurnCurrent(turnContext))
                 {
                     this.debug("agent/stale-decision", {
@@ -511,6 +530,21 @@ class ArenaController
     handleDecision(config, decision, turnContext)
     {
         turnContext.executingActions = true;
+        // The thinking-phase thought bubble vanishes the moment the worm starts acting.
+        this.hideThoughtBubble();
+        // Record the final trash talk in the shared chat history (so other worms can clap back).
+        // The streamed bubble is visual only; this is the single canonical history entry.
+        var talker = this.game.state.getCurrentPlayer();
+        if (decision.trashTalk && talker)
+        {
+            var talkTeam = talker.getTeam();
+            var talkWorm = talkTeam.getCurrentWorm();
+            this.appendChatHistory({
+                wormName: talkWorm ? talkWorm.name : turnContext.wormName,
+                teamName: talkTeam.name,
+                teamColor: talkTeam.color
+            }, decision.trashTalk);
+        }
         this.executeActions(decision.actions || [], turnContext)
             .then((records) =>
             {
@@ -532,6 +566,21 @@ class ArenaController
                 this.debug("engine-feedback", feedbackPayload);
                 this.postAgentEvent("engine-feedback", feedbackPayload);
                 var shouldContinueSameAiTurn = this.isAiTurnCurrent(turnContext);
+                if (shouldContinueSameAiTurn && turnContext.sameTurnBatch >= Settings.ARENA_MAX_BATCHES_PER_TURN)
+                {
+                    this.previousFeedback += "\n- Same-worm AI batch limit reached (" + Settings.ARENA_MAX_BATCHES_PER_TURN + "); ending this worm turn to prevent action-loop stalls.\n";
+                    this.postAgentEvent("agent/max-batches-per-turn", {
+                        playerIndex: turnContext.playerIndex,
+                        wormName: turnContext.wormName,
+                        turnNumber: turnContext.turnNumber,
+                        sameTurnBatch: turnContext.sameTurnBatch,
+                        maxSameTurnBatches: Settings.ARENA_MAX_BATCHES_PER_TURN
+                    });
+                    this.clearAiTurn(turnContext);
+                    this.busy = false;
+                    this.game.state.timerTiggerNextTurn();
+                    return;
+                }
                 if (shouldContinueSameAiTurn)
                 {
                     var continuePayload = {
@@ -550,6 +599,27 @@ class ArenaController
                 }
                 this.clearAiTurn(turnContext);
                 this.busy = false;
+            })
+            .catch((err) =>
+            {
+                // An unexpected engine throw mid-batch would otherwise leave busy=true
+                // until the turn watchdog fires (a multi-second visible freeze). Log it
+                // and recover immediately by advancing the turn.
+                turnContext.executingActions = false;
+                var errorPayload = {
+                    playerIndex: turnContext.playerIndex,
+                    wormName: turnContext.wormName,
+                    turnNumber: turnContext.turnNumber,
+                    errorMessage: (err && err.message) ? err.message : String(err)
+                };
+                this.debug("agent/execute-error", errorPayload);
+                this.postAgentEvent("agent/execute-error", errorPayload);
+                this.clearAiTurn(turnContext);
+                this.busy = false;
+                if (!turnContext.timedOut)
+                {
+                    this.game.state.timerTiggerNextTurn();
+                }
             });
     }
 
@@ -675,12 +745,18 @@ class ArenaController
 
         if (tool == "say")
         {
-            this.addLog({
-                wormName: worm.name,
-                teamName: player.getTeam().name,
-                teamColor: player.getTeam().color
-            }, action.text || "");
-            ArenaTelemetry.addNote("Said: " + (action.text || ""));
+            // Avoid echoing a line the streaming early-say already rendered for this worm-turn.
+            var sayText = action.text || "";
+            var sameAsEarly = turnContext.earlySayShown && String(sayText).trim().toLowerCase() == turnContext.earlySayShown;
+            if (!sameAsEarly)
+            {
+                this.addLog({
+                    wormName: worm.name,
+                    teamName: player.getTeam().name,
+                    teamColor: player.getTeam().color
+                }, sayText);
+            }
+            ArenaTelemetry.addNote("Said: " + sayText);
             return this.wait(100, turnContext).then(() => ArenaTelemetry.finishAction());
         }
 
@@ -776,9 +852,34 @@ class ArenaController
 
         if (tool == "fire")
         {
+            // Capture the shot inputs (power %, aim) before firing, since fire can reset the
+            // force meter. This is fed back so the agent can compare its formula prediction
+            // against the actual result and calibrate next turn.
+            var preFireWeapon = worm.getWeapon();
+            var shotSummary = (typeof ArenaSnapshot != "undefined" && ArenaSnapshot.shotInputSummary)
+                ? ArenaSnapshot.shotInputSummary(preFireWeapon, worm)
+                : "";
             worm.fire();
-            ArenaTelemetry.addNote("Fire requested with " + worm.getWeapon().name + ".");
-            return this.wait(action.observeMs || 5200, turnContext, true).then(() => ArenaTelemetry.finishAction());
+            var firedWeapon = worm.getWeapon();
+            var fireProfile = this.weaponObserveProfile(firedWeapon);
+            ArenaTelemetry.addNote("Fire requested with " + (firedWeapon ? firedWeapon.name : "weapon") + ".");
+            if (shotSummary)
+            {
+                ArenaTelemetry.addNote(shotSummary);
+            }
+            var observeMs = fireProfile.ballistic ? Math.max(action.observeMs || 0, fireProfile.observeMs) : (action.observeMs || fireProfile.observeMs);
+            return this.observeShot(firedWeapon, observeMs, turnContext).then(() =>
+            {
+                // currentAction stays open across the whole observation window, so a late fuse
+                // detonation is still recorded. If a ballistic weapon resolved with no explosion,
+                // it left the play area - say so instead of "still resolving".
+                var record = ArenaTelemetry.currentAction;
+                if (record && fireProfile.ballistic && record.explosions.length == 0 && record.damage.length == 0)
+                {
+                    ArenaTelemetry.addNote("No detonation was observed within " + observeMs + " ms; the projectile most likely left the play area (off-map or into water) without contact. This is a real miss, not a timing artifact.");
+                }
+                return ArenaTelemetry.finishAction();
+            });
         }
 
         if (tool == "wait")
@@ -809,11 +910,24 @@ class ArenaController
 
         if (selected >= 0 && selected < list.length)
         {
+            var requested = list[selected];
             manager.setCurrentWeapon(selected);
             GameInstance.weaponMenu.refresh();
-            ArenaTelemetry.addNote("Selected weapon `" + list[selected].name + "`.");
-            ArenaTelemetry.addNote(this.weaponUseGuidance(list[selected]));
-            return list[selected];
+            // The engine silently refuses to switch while the current weapon is still active, so
+            // confirm the switch actually took effect instead of reporting the request as success.
+            var active = manager.getCurrentWeapon ? manager.getCurrentWeapon() : requested;
+            if (active === requested || (active && requested && active.name == requested.name))
+            {
+                ArenaTelemetry.addNote("Selected weapon `" + requested.name + "`, ammo " + requested.ammo + ".");
+                ArenaTelemetry.addNote(this.weaponUseGuidance(requested));
+                if (typeof requested.ammo == "number" && requested.ammo <= 0)
+                {
+                    ArenaTelemetry.addNote("Warning: `" + requested.name + "` has 0 ammo; firing it will do nothing. Pick a weapon that still has ammo.");
+                }
+                return requested;
+            }
+            ArenaTelemetry.addNote("Weapon switch to `" + requested.name + "` was rejected: `" + (active ? active.name : "the current weapon") + "` is still active. Stop or observe the active weapon first, then reselect. A fire now would use `" + (active ? active.name : "the current weapon") + "`, not `" + requested.name + "`.");
+            return active || null;
         } else
         {
             ArenaTelemetry.addNote("Weapon `" + weaponName + "` was not found.");
@@ -847,6 +961,69 @@ class ArenaController
         player.getTeam().getWeaponManager().setCurrentWeapon(found.index);
         GameInstance.weaponMenu.refresh();
         return found.weapon;
+    }
+
+    weaponObserveProfile(weapon)
+    {
+        // Weapon-aware observation window so the feedback wait outlasts the projectile's fuse +
+        // flight. The old flat 5200 ms hid grenade detonations entirely (Holy Grenade fuse alone
+        // is 6000 ms). ballistic=false marks instant ray weapons that resolve on the same frame.
+        var name = weapon && weapon.name ? String(weapon.name).toLowerCase() : "";
+        if (name.indexOf("holy") >= 0)
+        {
+            return { observeMs: 8500, ballistic: true };
+        }
+        if (name.indexOf("grenade") >= 0)
+        {
+            return { observeMs: 6500, ballistic: true };
+        }
+        if (name.indexOf("dynamite") >= 0)
+        {
+            return { observeMs: 6500, ballistic: true };
+        }
+        if (name.indexOf("bazooka") >= 0 || name.indexOf("missile") >= 0)
+        {
+            return { observeMs: 6500, ballistic: true };
+        }
+        if (name.indexOf("shotgun") >= 0)
+        {
+            return { observeMs: 1500, ballistic: false };
+        }
+        if (name.indexOf("minigun") >= 0)
+        {
+            return { observeMs: 2200, ballistic: false };
+        }
+        return { observeMs: 5200, ballistic: false };
+    }
+
+    observeShot(weapon, observeMs, turnContext)
+    {
+        // Poll until the fired weapon resolves (detonated/cleaned up) rather than one fixed wait,
+        // so a contact hit ends early while a long fuse is still observed in full. The window is
+        // never cut before minWindow and is hard-capped by ceiling.
+        var ceiling = Math.max(observeMs, 9500);
+        var minWindow = Math.min(observeMs, 1200);
+        var start = Date.now();
+        var poll = () =>
+        {
+            var elapsed = Date.now() - start;
+            var live = !!(weapon && weapon.getIsActive && weapon.getIsActive());
+            if (elapsed >= ceiling)
+            {
+                return Promise.resolve(null);
+            }
+            if (!live && elapsed >= minWindow)
+            {
+                return Promise.resolve(null);
+            }
+            return this.wait(150, turnContext, true).then(poll);
+        };
+        return poll();
+    }
+
+    aiPhysicalTurnKey(player, worm)
+    {
+        return "turn-" + this.game.state.getPhysicalTurnSerial() + ":" + player.id + ":" + worm.name + ":" + player.getTeam().currentWorm;
     }
 
     positionNote(worm)
@@ -902,6 +1079,7 @@ class ArenaController
         }
 
         var dir = String(direction || "up").toLowerCase();
+        var startVec = Physics.vectorMetersToPixels(worm.body.GetPosition().Copy());
         var startPos = this.positionNote(worm);
         var startFuel = Math.round(weapon.fuel || 0);
         var start = Date.now();
@@ -938,7 +1116,14 @@ class ArenaController
 
         return pulse().then(() =>
         {
+            var endVec = Physics.vectorMetersToPixels(worm.body.GetPosition().Copy());
+            var moved = Math.round(Math.sqrt(Math.pow(endVec.x - startVec.x, 2) + Math.pow(endVec.y - startVec.y, 2)));
+            var fuelUsed = startFuel - Math.round(weapon.fuel || 0);
             ArenaTelemetry.addNote("Jet Pack thrust `" + dir + "` for " + duration + " ms. Start " + startPos + ", end " + this.positionNote(worm) + ", fuel " + startFuel + " -> " + Math.round(weapon.fuel || 0) + ".");
+            if (moved < 8 && fuelUsed > 0)
+            {
+                ArenaTelemetry.addNote("Jet Pack moved only " + moved + " px while burning " + fuelUsed + " fuel: you are blocked against the `" + dir + "` direction (ceiling/wall). Change thrust direction or stop; repeating this direction wastes fuel and ammo for no movement.");
+            }
         });
     }
 
@@ -951,8 +1136,16 @@ class ArenaController
         }
         worm.fire();
         var active = weapon.getIsActive();
-        var anchor = weapon.anchor ? Physics.vectorMetersToPixels(weapon.anchor.GetPosition().Copy()) : null;
-        ArenaTelemetry.addNote("Ninja Rope fired; active " + active + (anchor ? ", anchor (" + Math.round(anchor.x) + ", " + Math.round(anchor.y) + ")" : ", no anchor") + ".");
+        // Only trust the anchor when the rope actually attached; on a miss the engine leaves a
+        // stale anchor from a previous fire, which would otherwise look like a successful hook.
+        var anchor = active && weapon.anchor ? Physics.vectorMetersToPixels(weapon.anchor.GetPosition().Copy()) : null;
+        if (active)
+        {
+            ArenaTelemetry.addNote("Ninja Rope fired; active true" + (anchor ? ", anchor (" + Math.round(anchor.x) + ", " + Math.round(anchor.y) + ")" : "") + ".");
+        } else
+        {
+            ArenaTelemetry.addNote("Ninja Rope hook missed: the aim ray found no terrain within range, so the rope did not attach. Any rope_contract/rope_swing/rope_release later in this same batch cannot act on it. Re-aim at solid terrain (a wall or ceiling within ~900 px) before firing the rope again.");
+        }
         return weapon;
     }
 
@@ -1078,10 +1271,7 @@ class ArenaController
     setAim(worm, degrees)
     {
         var bounded = Math.max(-179, Math.min(179, Number(degrees || 0)));
-        var radians = Utilies.toRadians(bounded);
-        worm.direction = (bounded > 90 || bounded < -90) ? Worm.DIRECTION.left : Worm.DIRECTION.right;
-        worm.target.direction = worm.direction;
-        worm.target.setTargetDirection(Utilies.angleToVector(radians));
+        worm.target.setAimDegrees(bounded);
         ArenaTelemetry.addNote("Set aim to " + bounded + " degrees.");
     }
 
@@ -1634,53 +1824,185 @@ class ArenaController
         });
     }
 
+    // No chat panel: the worm's line is shown as a thought bubble over its head (Worms-style).
+    // ensureOverlay now lazily builds that single reusable bubble element.
     ensureOverlay()
     {
-        if (this.overlay)
+        if (this.bubbleEl)
         {
             return;
         }
+        var el = document.createElement("div");
+        el.id = "arenaThoughtBubble";
+        el.className = "wa-bubble";
+        el.style.display = "none";
 
-        this.overlay = document.createElement("div");
-        this.overlay.id = "arenaAgentOverlay";
-        this.overlay.style.position = "absolute";
-        this.overlay.style.right = "12px";
-        this.overlay.style.top = "12px";
-        this.overlay.style.width = "360px";
-        this.overlay.style.maxHeight = "46vh";
-        this.overlay.style.overflow = "hidden";
-        this.overlay.style.background = "rgba(10, 10, 14, 0.78)";
-        this.overlay.style.border = "1px solid rgba(255,255,255,0.55)";
-        this.overlay.style.color = "#f4f4f4";
-        this.overlay.style.font = "12px Sans-Serif";
-        this.overlay.style.zIndex = "20";
-        this.overlay.style.padding = "8px";
+        // No name inside the bubble: the worm already has its name label below it.
+        var txt = document.createElement("div");
+        txt.className = "wa-bubble-text";
+        var tail = document.createElement("div");
+        tail.className = "wa-bubble-tail";
 
-        var title = document.createElement("div");
-        title.innerHTML = "<strong>LLM Worms Arena</strong>";
-        title.style.marginBottom = "6px";
-        this.overlay.appendChild(title);
-
-        this.logEl = document.createElement("div");
-        this.logEl.style.maxHeight = "40vh";
-        this.logEl.style.overflowY = "auto";
-        this.overlay.appendChild(this.logEl);
-
-        document.body.appendChild(this.overlay);
+        el.appendChild(txt);
+        el.appendChild(tail);
+        document.body.appendChild(el);
+        this.bubbleEl = el;
     }
 
+    // Chat history is kept for the prompt (shared chat + clap-backs); nothing is rendered to a panel.
     addLog(speaker, text)
     {
         this.appendChatHistory(speaker, text);
+    }
+
+    // Show/refresh the worm's line as a thought bubble above the active worm while it thinks.
+    // Called repeatedly as the line streams in - the text updates live; the fade-in plays once.
+    showThoughtBubble(turnContext, text)
+    {
+        if (!this.isAiTurnCurrent(turnContext))
+        {
+            return;
+        }
+        var player = this.game.state.getCurrentPlayer();
+        if (!player)
+        {
+            return;
+        }
+        var team = player.getTeam();
+        var worm = team.getCurrentWorm();
+        turnContext.earlySayShown = String(text).trim().toLowerCase();
+
         this.ensureOverlay();
-        var speakerLabel = typeof speaker == "string" ? speaker : speaker.wormName;
-        var teamColor = typeof speaker == "string" ? "#f4f4f4" : speaker.teamColor;
-        var row = document.createElement("div");
-        row.style.borderTop = "1px solid rgba(255,255,255,0.15)";
-        row.style.padding = "5px 0";
-        row.innerHTML = "<strong style=\"color:" + this.escapeHtml(teamColor) + "\">" + this.escapeHtml(speakerLabel) + "</strong>: " + this.escapeHtml(text);
-        this.logEl.appendChild(row);
-        this.logEl.scrollTop = this.logEl.scrollHeight;
+        var wasHidden = this.bubbleEl.style.display == "none";
+        this.bubbleWorm = worm;
+        this.bubbleEl.style.borderColor = team.color;
+        // The streamed text is the typewriter TARGET; the client reveals it character by character.
+        this.bubbleTargetText = String(text);
+
+        if (wasHidden)
+        {
+            this.bubbleShownChars = 0;
+            this.bubbleEl.querySelector(".wa-bubble-text").textContent = "";
+            this.bubbleEl.style.display = "block";
+            this.bubbleEl.classList.remove("wa-bubble-in");
+            void this.bubbleEl.offsetWidth;
+            this.bubbleEl.classList.add("wa-bubble-in");
+        }
+
+        this.startTypewriter();
+        this.positionBubble();
+        this.startBubbleTracking();
+    }
+
+    // Reveal the bubble text one character at a time toward the latest streamed target, easing out
+    // as it catches up. Restarts whenever a new (longer) chunk extends the target.
+    startTypewriter()
+    {
+        if (this.typewriterTimer)
+        {
+            return;
+        }
+        var self = this;
+        var step = function ()
+        {
+            self.typewriterTimer = null;
+            if (!self.bubbleEl || self.bubbleEl.style.display == "none")
+            {
+                return;
+            }
+            var target = self.bubbleTargetText || "";
+            var shown = self.bubbleShownChars || 0;
+            if (shown >= target.length)
+            {
+                return; // caught up; will restart when the target grows
+            }
+            var advance = Math.max(1, Math.floor((target.length - shown) / 22));
+            self.bubbleShownChars = Math.min(target.length, shown + advance);
+            self.bubbleEl.querySelector(".wa-bubble-text").textContent = target.slice(0, self.bubbleShownChars);
+            self.positionBubble();
+            self.typewriterTimer = window.setTimeout(step, 16);
+        };
+        this.typewriterTimer = window.setTimeout(step, 16);
+    }
+
+    startBubbleTracking()
+    {
+        if (this.bubbleRaf)
+        {
+            return;
+        }
+        var self = this;
+        var step = function ()
+        {
+            if (!self.bubbleEl || self.bubbleEl.style.display == "none" || !self.bubbleWorm)
+            {
+                self.bubbleRaf = null;
+                return;
+            }
+            self.positionBubble();
+            self.bubbleRaf = window.requestAnimationFrame(step);
+        };
+        this.bubbleRaf = window.requestAnimationFrame(step);
+    }
+
+    positionBubble()
+    {
+        var worm = this.bubbleWorm;
+        if (!worm || !worm.body || !this.game || !this.game.camera || !this.bubbleEl)
+        {
+            return;
+        }
+        var px = Physics.vectorMetersToPixels(worm.body.GetPosition().Copy());
+        var sx = px.x - this.game.camera.getX();
+        var sy = px.y - this.game.camera.getY();
+        var el = this.bubbleEl;
+        var bw = el.offsetWidth;
+        var bh = el.offsetHeight;
+        var vw = window.innerWidth;
+        var vh = window.innerHeight;
+
+        var left = sx - (bw / 2);
+        // Sit clearly ABOVE the worm's name + HP labels, leaving room for the cloud-trail dots.
+        var top = sy - bh - 80;
+        var below = false;
+        if (top < 8)
+        {
+            // Not enough room above: flip below the worm so it never covers the action.
+            top = sy + 58;
+            below = true;
+        }
+        left = Math.max(8, Math.min(vw - bw - 8, left));
+        top = Math.max(8, Math.min(vh - bh - 8, top));
+        el.style.left = Math.round(left) + "px";
+        el.style.top = Math.round(top) + "px";
+        if (below)
+        {
+            el.classList.add("wa-bubble-below");
+        } else
+        {
+            el.classList.remove("wa-bubble-below");
+        }
+    }
+
+    hideThoughtBubble()
+    {
+        if (this.bubbleEl)
+        {
+            this.bubbleEl.style.display = "none";
+        }
+        this.bubbleWorm = null;
+        if (this.bubbleRaf)
+        {
+            window.cancelAnimationFrame(this.bubbleRaf);
+            this.bubbleRaf = null;
+        }
+        if (this.typewriterTimer)
+        {
+            window.clearTimeout(this.typewriterTimer);
+            this.typewriterTimer = null;
+        }
+        this.bubbleShownChars = 0;
+        this.bubbleTargetText = "";
     }
 
     logAgentRequest(requestId, config, payload)
@@ -1729,6 +2051,112 @@ class ArenaController
         this.postAgentEvent("agent-request", eventPayload);
     }
 
+    consumeDecisionStream(response, requestId, turnContext)
+    {
+        // Read the newline-delimited JSON turn stream: render `say` events immediately so the
+        // worm taunts within a couple of seconds, and return the `final` decision once it lands.
+        var self = this;
+        var fullText = "";
+        var finalDecision = null;
+
+        var logResponse = function ()
+        {
+            var httpPayload = {
+                requestId: requestId,
+                status: response.status,
+                ok: response.ok,
+                responseText: fullText
+            };
+            self.debug("agent/http-response", httpPayload);
+            self.postAgentEvent("agent-http-response", httpPayload);
+        };
+
+        var handleLine = function (line)
+        {
+            var trimmed = String(line || "").trim();
+            if (!trimmed)
+            {
+                return;
+            }
+            var event;
+            try
+            {
+                event = JSON.parse(trimmed);
+            } catch (e)
+            {
+                return;
+            }
+            if (event.type == "say" && event.text)
+            {
+                self.showThoughtBubble(turnContext, event.text);
+            } else if (event.type == "final")
+            {
+                finalDecision = event.decision;
+            } else if (event.type == "error")
+            {
+                throw new Error(event.error || "agent stream error");
+            }
+        };
+
+        var finishDecision = function ()
+        {
+            logResponse();
+            if (!finalDecision)
+            {
+                throw new Error("Agent response stream ended without final decision");
+            }
+            return finalDecision;
+        };
+
+        // Fallback when the body is not a readable stream (older engines): buffer then split.
+        if (!response.body || typeof response.body.getReader != "function")
+        {
+            return response.text().then(function (text)
+            {
+                fullText = text;
+                var lines = text.split("\n");
+                for (var i = 0; i < lines.length; i++)
+                {
+                    handleLine(lines[i]);
+                }
+                return finishDecision();
+            });
+        }
+
+        var reader = response.body.getReader();
+        var decoder = new TextDecoder();
+        var buffer = "";
+        var pump = function ()
+        {
+            return reader.read().then(function (result)
+            {
+                if (result.value)
+                {
+                    var chunk = decoder.decode(result.value, { stream: true });
+                    fullText += chunk;
+                    buffer += chunk;
+                    var lines = buffer.split("\n");
+                    buffer = lines.pop();
+                    for (var i = 0; i < lines.length; i++)
+                    {
+                        handleLine(lines[i]);
+                    }
+                }
+                if (result.done)
+                {
+                    if (buffer)
+                    {
+                        handleLine(buffer);
+                        buffer = "";
+                    }
+                    return finishDecision();
+                }
+                return pump();
+            });
+        };
+        return pump();
+    }
+
     postAgentEvent(label, payload)
     {
         if (!Settings.ARENA_AGENT_ENDPOINT)
@@ -1765,7 +2193,10 @@ class ArenaController
 
     debug(label, value)
     {
-        if (typeof console == "undefined" || !console.log)
+        // Server-side event logs (postAgentEvent) always capture the turn; the
+        // verbose console mirror is opt-in (?arenaDebug=true) so the public
+        // build's devtools console stays clean.
+        if (!Settings.ARENA_DEBUG_LOGS || typeof console == "undefined" || !console.log)
         {
             return;
         }

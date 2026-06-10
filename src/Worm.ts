@@ -53,6 +53,7 @@ class Worm extends Sprite
     stateAnimationMgmt: WormAnimationManger;
     target: Target;
     isDead: bool;
+    sunk: bool;
 
     soundDelayTimer: Timer;
 
@@ -189,6 +190,18 @@ class Worm extends Sprite
         return this.team.getWeaponManager().getCurrentWeapon();
     }
 
+    getMuzzlePosition()
+    {
+        var pos = this.body.GetPosition().Copy();
+        pos.y -= Physics.pixelToMeters(28);
+        return pos;
+    }
+
+    getMuzzlePositionPixels()
+    {
+        return Physics.vectorMetersToPixels(this.getMuzzlePosition());
+    }
+
 
     // What happens when a worm collies with another object
     beginContact(contact)
@@ -224,7 +237,8 @@ class Worm extends Sprite
 
     postSolve(contact, impulse)
     {
-        if (contact.GetFixtureA() instanceof BaseWeapon == false && contact.GetFixtureB() instanceof BaseWeapon == false)
+        if (contact.GetFixtureA().GetBody().GetUserData() instanceof BaseWeapon == false
+            && contact.GetFixtureB().GetBody().GetUserData() instanceof BaseWeapon == false)
         {
             var impactTheroshold = 8 * Worm.DENSITY
 
@@ -262,6 +276,11 @@ class Worm extends Sprite
 
     isStationary()
     {
+        // A worm sinking out of the world after drowning must not block the next turn.
+        if (this.sunk)
+        {
+            return true;
+        }
         var isStationary = this.body.GetLinearVelocity().Length() == 0 // Completely stopped
         || // OR 
         Utilies.isBetweenRange(this.body.GetLinearVelocity().y, 0.001, -0.001) && Utilies.isBetweenRange(this.body.GetLinearVelocity().x, 0.001, -0.001); // near enough stopped
@@ -421,7 +440,6 @@ class Worm extends Sprite
 
                 if (overrideClientOnlyUse || Client.isClientsTurn())
                 {
-                    console.log("CLIENT HIT");
                     if (typeof ArenaTelemetry != "undefined")
                     {
                         ArenaTelemetry.recordDamage(this, damage, worm);
@@ -493,6 +511,33 @@ class Worm extends Sprite
 
         } else
         {
+            // A worm can die (drown, splash damage) while a grenade/rocket it launched is still
+            // airborne. That live projectile is normally driven only by its active, living owner via
+            // the branch above; once the owner is dead it would freeze mid-air, never advance its
+            // fuse, never detonate, and so never deactivate - which leaves areAllWeaponsDeactived()
+            // false forever and deadlocks the whole match (the grenade hangs frozen in the sky).
+            // Keep updating the orphaned projectile here so it detonates/cleans up and the turn ends.
+            var orphanWeapon = this.team.getWeaponManager().getCurrentWeapon();
+            if (orphanWeapon && orphanWeapon.getIsActive()
+                && orphanWeapon.worm == this)
+            {
+                if (orphanWeapon instanceof ThrowableWeapon || orphanWeapon instanceof ProjectileWeapon)
+                {
+                    orphanWeapon.update();
+                } else
+                {
+                    orphanWeapon.deactivate();
+                }
+            }
+
+            // A drowned worm sinks out of view, then we stop it once it is well below the world so a
+            // sensor body is not left accelerating under gravity forever.
+            if (this.sunk && typeof GameInstance != "undefined" && GameInstance.terrain
+                && Physics.metersToPixels(this.body.GetPosition().y) > GameInstance.terrain.getWaterLine() + 250)
+            {
+                this.body.SetLinearVelocity(new b2Vec2(0, 0));
+            }
+
             //Quick hack to get the sprite to unlock
             // Seems the die squence locks the sprite
             if (Sprites.worms.die == this.spriteDef)

@@ -1,0 +1,12 @@
+node_modules
+dist
+src/Worms.js
+src/Worms.js.map
+data
+external
+logs
+.playwright-mcp
+OriginalAssets
+OriginalSounds
+assets/worms-*
+assets/*.local.json

@@ -78,6 +78,11 @@ class Terrain
          return this.boundary.worldHeight;
     }
 
+    getWaterLine()
+    {
+         return this.bufferCanvas.height - 35;
+    }
+
     // This setup physical bodies from image data 
     createTerrainPhysics(x, y, width, height, data, world, worldScale)
     {
@@ -184,6 +189,7 @@ class Terrain
                 this.bufferCanvasContext.fillRect(tmp.xPos - tmp.width / 2, tmp.yPos, tmp.width, tmp.radius);
             } else
             {
+                this.bufferCanvasContext.moveTo(tmp.xPos + tmp.radius, tmp.yPos);
                 this.bufferCanvasContext.arc(tmp.xPos, tmp.yPos, tmp.radius, angle, 0, true);
             }
 

@@ -48,16 +48,26 @@ class BaseWeapon
 
     activate(worm)
     {
+        if (this.getIsActive())
+        {
+            return false;
+        }
+
+        if (this.ammo <= 0)
+        {
+            AssetManager.getSound("cantclickhere").play();
+            return false;
+        }
 
         this.setIsActive(true);
         this.ammo--;
         this.worm = worm;
 
         Logger.debug(this.name + " was activated ");
+        return true;
 
     }
 
     update() { }
     draw(ctx) { }
 }
-

@@ -44,7 +44,10 @@ class Minigun extends RayWeapon
 
     activate(worm: Worm)
     {
-        super.activate(worm);
+        if (super.activate(worm) == false)
+        {
+            return false;
+        }
         this.worm.swapSpriteSheet(Sprites.worms.minigunFire);
 
         //Setup a timer, to stop the weapon firing after so many secounds
@@ -57,6 +60,7 @@ class Minigun extends RayWeapon
                 this.worm.swapSpriteSheet(this.takeAimAnimations);
         }, 1000);
         AssetManager.getSound("MiniGunFire").play();
+        return true;
     }
 
     update()
@@ -69,14 +73,22 @@ class Minigun extends RayWeapon
             if (this.fireRate.hasTimePeriodPassed())
             {
                 
-                var hitPiont = Physics.shotRay(this.worm.body.GetPosition(), this.worm.target.getTargetDirection().Copy());
-                if (hitPiont)
+                var rayHit = Physics.shotRayWithFixture(this.worm.getMuzzlePosition(), this.worm.target.getTargetDirection().Copy(), this.worm.body);
+                if (rayHit)
                 {
-                    Effects.explosion(hitPiont,
+                    var hitWorm = rayHit.body.GetUserData();
+                    var explosionDamage = this.damgeToWorm;
+                    if (hitWorm instanceof Worm)
+                    {
+                        hitWorm.hit(this.damgeToWorm, this.worm);
+                        explosionDamage = 0;
+                    }
+
+                    Effects.explosion(rayHit.point,
                         this.damageToTerrainRadius,
                         1,
                          this.forceScaler,
-                        this.damgeToWorm,
+                        explosionDamage,
                         this.worm,
                        null);
                 }
@@ -88,7 +100,4 @@ class Minigun extends RayWeapon
     }
 
 }
-
-
-
 

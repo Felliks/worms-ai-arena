@@ -70,6 +70,20 @@ class Target extends PhysicsSprite
         this.targetDirection = vector;
     }
 
+    setAimDegrees(degrees)
+    {
+        var bounded = Math.max(-179, Math.min(179, Number(degrees || 0)));
+        var radians = Utilies.toRadians(bounded);
+        this.worm.direction = (bounded > 90 || bounded < -90) ? Worm.DIRECTION.left : Worm.DIRECTION.right;
+        this.direction = this.worm.direction;
+        this.targetDirection = Utilies.angleToVector(radians);
+
+        var verticalAngle = Utilies.toDegrees(Math.asin(Math.max(-1, Math.min(1, this.targetDirection.y))));
+        var frame = Math.max(0, Math.min(this.worm.getTotalFrames() - 1, 16 - (verticalAngle / 6)));
+        this.previousSpriteFrame = frame;
+        this.worm.setCurrentFrame(frame);
+    }
+
     changeDirection(dir)
     {
         var td = this.targetDirection.Copy();

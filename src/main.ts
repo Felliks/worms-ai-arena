@@ -1,8 +1,8 @@
 /**
  *  
- * Worms Armageddon HTML5 Clone 
+ * LLM Worms Arena
  *
- * Main entry piont
+ * Main entry point
  *
  *  License: Apache 2.0
  *  author:  Ciarán McCann

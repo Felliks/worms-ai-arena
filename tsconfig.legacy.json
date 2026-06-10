@@ -13,8 +13,5 @@
     "lib": ["DOM", "ES5"],
     "ignoreDeprecations": "6.0"
   },
-  "files": [
-    "src/legacy-globals.d.ts",
-    "src/main.ts"
-  ]
+  "files": ["src/legacy-globals.d.ts", "src/main.ts"]
 }

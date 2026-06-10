@@ -3,14 +3,15 @@
  * Front-menu music + UI click sounds + the themed menu background.
  *
  * Audio is INDEPENDENT of Settings.SOUND (which gates the in-game pipeline).
- * If an original asset pack provides music/<menu>.ogg it is used; otherwise a
+ * If a custom asset pack provides music/<menu>.ogg it is used; otherwise a
  * small, self-contained Web Audio ambient pad + click blips are synthesised so
- * the menu always has sound without bundling any copyrighted audio. The mute
- * toggle (persisted) controls everything. Nothing here touches gameplay code.
+ * the menu always has sound without requiring bundled audio. The mute toggle
+ * (persisted) controls everything. Nothing here touches gameplay code.
  *
  *  License: Apache 2.0
  */
 ///<reference path="../Settings.ts" />
+///<reference path="../audio/ArenaMusic.ts" />
 
 module MenuAudio
 {
@@ -20,6 +21,11 @@ module MenuAudio
     var muted = false;
     var initialised = false;
     var realMusic = false;
+
+    // When Tone.js is present (and no external pack overrides it) the menu music
+    // and click blips are handled by the richer ArenaMusic engine; the Web Audio
+    // ambient/click below is only the no-Tone fallback.
+    var useTone = false;
 
     // Web Audio (procedural fallback) state.
     var ctx = null;
@@ -54,8 +60,8 @@ module MenuAudio
         return ctx;
     }
 
-    // A soft, slow ambient pad (warm drone + gentle filter movement). Original,
-    // synthesised – not derived from any copyrighted track.
+    // A soft, slow ambient pad (warm drone + gentle filter movement), generated
+    // locally by the Web Audio fallback.
     function startProcedural()
     {
         if (ambientOn || muted) { return; }
@@ -127,6 +133,7 @@ module MenuAudio
     export function click()
     {
         if (muted) { return; }
+        if (useTone) { try { ArenaMusic.click(); } catch (e) { } return; }
         var c = ensureCtx();
         if (!c) { return; }
         var t = c.currentTime;
@@ -152,6 +159,9 @@ module MenuAudio
 
         var base = Settings.getAssetPackBase();
         var hasExternalAssetPack = Settings.ASSET_PACK && Settings.ASSET_PACK != "default";
+
+        // Prefer the Tone.js soundtrack unless an external pack ships real music.
+        useTone = (typeof ArenaMusic != "undefined") && ArenaMusic.isAvailable() && !hasExternalAssetPack;
 
         audioEl = null;
         if (hasExternalAssetPack)
@@ -179,6 +189,13 @@ module MenuAudio
 
         buildToggle();
         applyMenuBackground(base, hasExternalAssetPack);
+
+        if (useTone)
+        {
+            // ArenaMusic owns gesture-unlock and the menu loop itself.
+            try { ArenaMusic.enterMenu(); } catch (e) { }
+            return;
+        }
 
         var startOnGesture = function ()
         {
@@ -212,22 +229,36 @@ module MenuAudio
 
     export function stop()
     {
-        if (audioEl) { try { audioEl.pause(); } catch (e) { } }
-        stopProcedural();
-        if (ctx) { try { ctx.suspend(); } catch (e) { } }
-        if (muteBtn) { muteBtn.style.display = "none"; }
+        // Tear down the menu background regardless of audio engine.
         if (typeof document != "undefined" && document.body)
         {
             var b = document.body;
             b.className = (" " + b.className + " ").replace(" worms-menu-bg ", " ").replace(/^\s+|\s+$/g, "");
             b.style.backgroundImage = "";
         }
+
+        if (useTone)
+        {
+            // Keep the music going (Game.start swaps in the battle loop) and keep
+            // the toggle on-screen so the player can still mute mid-match.
+            return;
+        }
+
+        if (audioEl) { try { audioEl.pause(); } catch (e) { } }
+        stopProcedural();
+        if (ctx) { try { ctx.suspend(); } catch (e) { } }
+        if (muteBtn) { muteBtn.style.display = "none"; }
     }
 
     function applyMute()
     {
         storageSet(muted);
         if (muteBtn) { muteBtn.innerHTML = muted ? "&#128263;" : "&#128266;"; }
+        if (useTone)
+        {
+            try { ArenaMusic.setMuted(muted); } catch (e) { }
+            return;
+        }
         if (masterGain && ctx)
         {
             try { masterGain.gain.setValueAtTime(muted ? 0 : 1, ctx.currentTime); } catch (e) { }
@@ -248,7 +279,7 @@ module MenuAudio
     {
         muteBtn = document.createElement("div");
         muteBtn.id = "menuMusicToggle";
-        muteBtn.title = "Toggle menu sound";
+        muteBtn.title = "Toggle music";
         muteBtn.innerHTML = muted ? "&#128263;" : "&#128266;";
         muteBtn.onclick = function () { muted = !muted; applyMute(); };
         document.body.appendChild(muteBtn);

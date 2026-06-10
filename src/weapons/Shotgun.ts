@@ -56,13 +56,19 @@ class Shotgun extends RayWeapon
     {
         if (this.getIsActive() == false)
         {
-            super.activate(worm);
+            if (super.activate(worm) == false)
+            {
+                return false;
+            }
 
             this.animationSheetChangeTimer.reset();
             this.fireAnimationIndex = 0;
             AssetManager.getSound("SHOTGUNRELOAD").play(1, 0.3);
             this.shotsTaken++;
+            return true;
         }
+
+        return false;
     }
 
     update()
@@ -80,14 +86,22 @@ class Shotgun extends RayWeapon
 
             if (this.fireAnimationIndex >= this.fireAnimations.length)
             {
-                var hitPiont = Physics.shotRay(this.worm.body.GetPosition(), this.worm.target.getTargetDirection().Copy());
-                if (hitPiont)
+                var rayHit = Physics.shotRayWithFixture(this.worm.getMuzzlePosition(), this.worm.target.getTargetDirection().Copy(), this.worm.body);
+                if (rayHit)
                 {
-                    Effects.explosion(hitPiont,
+                    var hitWorm = rayHit.body.GetUserData();
+                    var explosionDamage = this.damgeToWorm;
+                    if (hitWorm instanceof Worm)
+                    {
+                        hitWorm.hit(this.damgeToWorm, this.worm);
+                        explosionDamage = 0;
+                    }
+
+                    Effects.explosion(rayHit.point,
                         this.damageToTerrainRadius,
                         1,
                         this.forceScaler,
-                        this.damgeToWorm,
+                        explosionDamage,
                         this.worm,
                         AssetManager.getSound("ShotGunFire"));
                 } else

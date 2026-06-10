@@ -64,7 +64,7 @@ class WormManager
             return 0;
         }
 
-        var waterLine = GameInstance.terrain.getHeight() - 40;
+        var waterLine = GameInstance.terrain.getWaterLine();
         var killed = 0;
         for (var i = this.allWorms.length - 1; i >= 0; --i)
         {
@@ -83,9 +83,17 @@ class WormManager
             worm.damageTake = 0;
             worm.setHealth(0);
             worm.isDead = true;
-            worm.body.SetLinearVelocity(new b2Vec2(0, 0));
+            // Sink and disappear instead of freezing on the surface: turn the body into a sensor so
+            // it drops through the world floor, and push it downward so it sinks out of view.
+            // Worm.isStationary() treats a sunk worm as stationary so it never blocks the next turn,
+            // and Worm.update() freezes it once it is well below the screen.
+            worm.sunk = true;
+            if (worm.fixture && worm.fixture.SetSensor)
+            {
+                worm.fixture.SetSensor(true);
+            }
             worm.body.SetAngularVelocity(0);
-            worm.body.SetAwake(false);
+            worm.body.SetLinearVelocity(new b2Vec2(0, 4));
             if (worm.arrow)
             {
                 worm.arrow.finished = true;
@@ -93,7 +101,10 @@ class WormManager
             var weapon = worm.team.getWeaponManager().getCurrentWeapon();
             if (weapon && weapon.getIsActive && weapon.getIsActive())
             {
-                weapon.deactivate();
+                if ((weapon instanceof ThrowableWeapon || weapon instanceof ProjectileWeapon) == false)
+                {
+                    weapon.deactivate();
+                }
             }
             if (GameInstance.healthMenu)
             {
@@ -133,6 +144,14 @@ class WormManager
 
         for (var i = this.allWorms.length-1; i >= 0; --i)
         {
+            // Skip dead worms: a drowned worm keeps a downward sink velocity for a
+            // moment, and following it would hijack the camera away from the worm
+            // whose turn just started.
+            if (this.allWorms[i].isDead)
+            {
+                continue;
+            }
+
             lenght = this.allWorms[i].body.GetLinearVelocity().Length();
 
             if (lenght > highestVecloity)
@@ -150,9 +169,13 @@ class WormManager
     {
         for (var i = this.allWorms.length-1; i >= 0; --i)
         {
-            if (this.allWorms[i].team.getWeaponManager().getCurrentWeapon().getIsActive() == true)
+            var weapons = this.allWorms[i].team.getWeaponManager().getListOfWeapons();
+            for (var j = weapons.length - 1; j >= 0; --j)
             {
-                return false;
+                if (weapons[j].getIsActive() == true)
+                {
+                    return false;
+                }
             }
         }
 
@@ -164,12 +187,16 @@ class WormManager
     {
         for (var i = this.allWorms.length-1; i >= 0; --i)
         {
-            var weapon = this.allWorms[i].team.getWeaponManager().getCurrentWeapon();
-            if (weapon.getIsActive() == true)
+            var weapons = this.allWorms[i].team.getWeaponManager().getListOfWeapons();
+            for (var j = weapons.length - 1; j >= 0; --j)
             {
-                if ((weapon instanceof ThrowableWeapon || weapon instanceof ProjectileWeapon) == false)
+                var weapon = weapons[j];
+                if (weapon.getIsActive() == true)
                 {
-                    weapon.deactivate();
+                    if ((weapon instanceof ThrowableWeapon || weapon instanceof ProjectileWeapon) == false)
+                    {
+                        weapon.deactivate();
+                    }
                 }
             }
         }

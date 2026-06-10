@@ -1,10 +1,10 @@
 /**
  * MainMenu.ts
  *
- * The themed Worms-Armageddon-style front end: main menu, quick play, battle
- * setup, the model-connection manager (game->team->worm cascade) and the team/
- * persona editor. It only reads/writes ArenaConfig + Settings and fires the
- * existing start callback; it never touches engine/agent/anti-cheat code.
+ * The themed artillery front end: main menu, quick play, battle setup, the
+ * model-connection manager (game->team->worm cascade) and the team/persona
+ * editor. It only reads/writes ArenaConfig + Settings and fires the existing
+ * start callback; it never touches engine/agent/anti-cheat code.
  *
  *  License: Apache 2.0
  */
@@ -99,13 +99,13 @@ module MainMenu
         stageEl = el("div", { class: "wa-stage" });
 
         var footer = el("div", { class: "wa-footer" }, [
-            el("span", { class: "wa-link", text: "Local 2-player", on: { click: function () { playClick(); startLocalGame(); } } }),
+            el("span", { class: "wa-link", text: "Local 2-player", attrs: { id: "startLocal" }, on: { click: function () { playClick(); startLocalGame(); } } }),
             el("span", { text: "·" }),
             el("span", { class: "wa-link", text: "Tutorial", on: { click: function () { playClick(); startTutorial(); } } }),
             el("div", { class: "wa-footer-spacer" }),
             el("span", { class: "wa-link", text: "Reset settings", on: { click: function () { ArenaConfig.reset(); toast("Settings reset to defaults"); go(screen); } } }),
             el("span", { text: "·" }),
-            el("span", { html: "Art &amp; sounds © Team17 (not bundled – see ASSETS.md)" })
+            el("span", { text: "Local-first AI artillery sandbox" })
         ]);
 
         rootEl = el("div", { attrs: { id: "wormsMenu" } }, [header, stageEl, footer]);

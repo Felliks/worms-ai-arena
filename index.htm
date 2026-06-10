@@ -1,16 +1,26 @@
 ﻿<!doctype html>
-<html manifest="offline.appcache">
+<html>
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, user-scalable=no, initial-scale=1, maximum-scale=1, user-scalable=0" />
+    <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-    <title>Worms Armageddon HTML5 Clone</title>
+    <meta name="theme-color" content="#201610" />
+    <meta name="description" content="Local-first browser artillery arena where LLMs and VLMs battle turn-based." />
+    <title>LLM Worms Arena</title>
+    <!-- Inline SVG favicon (a themed bomb): no extra request, no 404. -->
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='13' fill='%235fb6e6'/%3E%3Cpath d='M0 44h64v20H0z' fill='%236b4a2b'/%3E%3Ccircle cx='29' cy='40' r='15' fill='%23201610'/%3E%3Ccircle cx='24' cy='35' r='4' fill='%23ffffff' opacity='0.7'/%3E%3Crect x='32' y='16' width='4' height='12' rx='2' fill='%236e451f'/%3E%3Ccircle cx='40' cy='12' r='5' fill='%23ffc843'/%3E%3Ccircle cx='40' cy='12' r='2' fill='%23ff7a1a'/%3E%3C/svg%3E" />
     <link rel="stylesheet" href="css/bootstrap.min.css" type="text/css" />
     <link rel="stylesheet" href="css/custom.css" type="text/css" />
     <link rel="stylesheet" href="css/menu.css" type="text/css" />
 
     <!-- External deps -->
+    <!-- Tone.js powers the runtime-synthesised menu + battle soundtrack (ArenaMusic).
+         It MUST load before Box2dWeb: Box2dWeb's Closure-compiled global pollution
+         breaks Tone's import-time AudioContext singleton setup ("flush is not a
+         function"). Constructing Tone first, on clean globals, avoids it. -->
+    <script src="external/Tone.js"></script>
     <script src="external/jquery.1.8.2.min.js"></script>
     <script src="external/Box2dWeb-2.1.a.3.min.js"></script>
     <script src="external/Stats.js"></script>
@@ -70,15 +80,21 @@
     </div>
     <div id="turnTimeCounter" style="display: none"></div>
 
-    <!-- Themed loading splash. Once assets are ready, StartMenu hands off to the
-         MainMenu overlay (and removes this element). #notice hosts the loading bar. -->
+    <!-- Cinematic loading splash. Pure CSS by default; if assets/ui/loading-bg.jpg
+         exists, StartMenu layers it onto .wa-splash-art. Once assets are ready,
+         StartMenu hands off to the MainMenu overlay (and removes this element).
+         #notice hosts the themed progress bar, percentage and rotating tips. -->
     <div id="startMenu" class="wa-splash">
-        <div class="wa-splash-logo">
-            <span class="wa-splash-main">WORMS</span>
-            <span class="wa-splash-sub">A.I. ARENA</span>
+        <div class="wa-splash-inner">
+            <div id="notice" class="wa-load">
+                <div class="wa-load-head">
+                    <span class="wa-load-label">Deploying the battlefield</span>
+                    <span class="wa-load-pct">0%</span>
+                </div>
+                <div class="wa-load-track"><div class="wa-load-bar" style="width:0%"></div></div>
+                <div class="wa-load-tip">Tip: there is no wind here — blame the model, not the breeze.</div>
+            </div>
         </div>
-        <div class="wa-splash-tagline">Turn-based artillery. LLMs at the trigger.</div>
-        <div id="notice" style="font-size: 14px"></div>
         <div class="slide" style="display:none"></div>
         <div class="healthMenu" style="display:none">
             <ul></ul>

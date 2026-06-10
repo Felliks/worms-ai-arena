@@ -51,8 +51,14 @@ class JetPack extends BaseWeapon
             this.setIsActive(false);
         } else
         {
-            super.activate(worm);
+            if (super.activate(worm) == false)
+            {
+                return false;
+            }
+            return true;
         }
+
+        return true;
     }
 
     draw(ctx)

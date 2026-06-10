@@ -1,11 +1,10 @@
 /**
  * fetch-assets.ts
  *
- * Manifest-driven, source-agnostic installer for an *original* Worms Armageddon
- * asset pack. It reads LOCAL, gitignored manifests that YOU fill with sources
- * you are authorised to use (download URLs, or paths to assets you extracted
- * from your own legally-owned copy of the game). Nothing copyrighted is ever
- * committed: output goes to assets/worms-<pack>/ which is gitignored.
+ * Manifest-driven, source-agnostic installer for a custom local asset pack. It
+ * reads LOCAL, gitignored manifests that map direct URLs or local files onto the
+ * asset names expected by the game. Output goes to assets/worms-<pack>/, which
+ * is gitignored.
  *
  * See ASSETS.md for the legal context, where assets come from, and how to fill
  * the manifests.
@@ -14,7 +13,7 @@
  *     assets/sources.local.json         direct file -> file map (images/sounds/music)
  *     assets/sprite-mapping.local.json  sprite sheets -> repacked vertical strips
  *
- *   Run:  npm run fetch:assets:original
+ *   Run:  npm run fetch:assets
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -22,7 +21,7 @@ import { spawnSync } from "node:child_process";
 import { PNG } from "pngjs";
 
 const root = process.cwd();
-const PACK: string = process.env.ASSET_PACK ?? "original";
+const PACK: string = process.env.ASSET_PACK ?? "custom";
 const packDir = path.join(root, "assets", `worms-${PACK}`);
 
 type SourceMap = Record<string, string>;
@@ -240,11 +239,11 @@ async function main(): Promise<void> {
   if (!sources && !mapping) {
     console.log(
       [
-        "No asset manifest found. To install an original asset pack locally:",
+        "No asset manifest found. To build a custom local asset pack:",
         "  1. cp assets/sources.example.json        assets/sources.local.json",
         "  2. cp assets/sprite-mapping.example.json assets/sprite-mapping.local.json",
         "  3. Fill them with sources you are authorised to use (see ASSETS.md).",
-        "  4. Re-run: npm run fetch:assets:original",
+        "  4. Re-run: npm run fetch:assets",
         "",
         "Output goes to assets/worms-" + PACK + "/ (gitignored). The game uses it",
         "with ?assetPack=" + PACK + " and falls back to placeholders for missing files.",

@@ -69,7 +69,7 @@ class Timer
 
     getTimeLeftInSec()
     {
-        return (this.timePeriod - this.delta) / 60;
+        return (this.timePeriod - this.delta) / 1000;
     }
     
     getTimeNow()
@@ -81,9 +81,11 @@ class Timer
     {
         if (this.isTimerPaused == false)
         {
-            this.delta += this.getTimeNow() - this.timeSinceLastUpdate;
-            this.timeSinceLastUpdate = this.getTimeNow();
-            this.accumulatedTime += this.delta;
+            var now = this.getTimeNow();
+            var elapsed = now - this.timeSinceLastUpdate;
+            this.delta += elapsed;
+            this.timeSinceLastUpdate = now;
+            this.accumulatedTime += elapsed;
 
         }
     }

@@ -28,6 +28,7 @@
 ///<reference path="networking/Client.ts"/>
 ///<reference path="networking/Lobby.ts"/>
 ///<reference path="Tutorial.ts"/>
+///<reference path="audio/ArenaMusic.ts"/>
 
 class Game
 {
@@ -62,6 +63,7 @@ class Game
     lobby: Lobby;
 
     winner: Player;
+    noContest: bool;
 
     static map: GameMap = new GameMap(Maps.castle);
 
@@ -127,6 +129,7 @@ class Game
         }
 
         this.lobby = new Lobby();
+        this.noContest = false;
     }
 
     getGameNetData()
@@ -254,6 +257,9 @@ class Game
 
         }, 1200);
 
+        // Swap the menu loop for the driving battle soundtrack now the match is live.
+        try { ArenaMusic.enterGame(); } catch (e) { }
+
         this.nextTurn();
 
     }
@@ -267,7 +273,13 @@ class Game
         // If the id is -1 then the next player is dead
         if (id == null)
         {
-            this.nextTurn()
+            this.noContest = true;
+            if (this.gameTimer && this.gameTimer.timer)
+            {
+                this.gameTimer.timer.pause();
+            }
+            Notify.display("No contest", "All remaining teams are dead.", -1, Notify.levels.warn, true);
+            return;
         } else
         {
             Logger.log(" Player was " + this.lobby.client_GameLobby.currentPlayerId + " player is now " + id);
@@ -297,7 +309,7 @@ class Game
             this.wormManager.forceOutOfBoundsDeaths();
 
             // while no winner, check for one
-            if (this.winner == null)
+            if (this.winner == null && this.noContest == false)
             {
                 this.winner = this.state.checkForWinner();
 
@@ -310,7 +322,7 @@ class Game
             }
 
             // When ready to go to the next player and while no winner
-            if (this.state.readyForNextTurn() && this.winner == null)
+            if (this.state.readyForNextTurn() && this.winner == null && this.noContest == false)
             {
                 //If this player is the host they will decide when to move to next player
                 if (Client.isClientsTurn())
@@ -370,7 +382,7 @@ class Game
         this.actionCanvasContext.save();
         this.actionCanvasContext.translate(-this.camera.getX(), -this.camera.getY());
         this.enviormentEffects.draw(this.actionCanvasContext);
-        this.terrain.wave.drawBackgroundWaves(this.actionCanvasContext, 0, this.terrain.bufferCanvas.height, this.terrain.getWidth());
+        this.terrain.wave.drawBackgroundWaves(this.actionCanvasContext, 0, this.terrain.getWaterLine(), this.terrain.getWidth());
         this.actionCanvasContext.restore();
 
         this.terrain.draw(this.actionCanvasContext);
@@ -378,7 +390,7 @@ class Game
         this.actionCanvasContext.save();
         this.actionCanvasContext.translate(-this.camera.getX(), -this.camera.getY());
 
-        this.terrain.wave.draw(this.actionCanvasContext, this.camera.getX(), this.terrain.bufferCanvas.height, this.terrain.getWidth());
+        this.terrain.wave.draw(this.actionCanvasContext, this.camera.getX(), this.terrain.getWaterLine(), this.terrain.getWidth());
 
         if (Settings.PHYSICS_DEBUG_MODE)
         {

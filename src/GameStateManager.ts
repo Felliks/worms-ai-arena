@@ -21,14 +21,16 @@ class GameStateManager
     private players: Player[];
     isStarted: bool;
     physicsWorldSettled: bool;
+    physicalTurnSerial: number;
 
     constructor()
     {
 
         this.nextTurnTrigger = false;
-        this.currentPlayerIndex = 0;
+        this.currentPlayerIndex = -1;
         this.isStarted = false;
         this.physicsWorldSettled = false;
+        this.physicalTurnSerial = 0;
     }
 
     init(players)
@@ -91,6 +93,11 @@ class GameStateManager
         return this.players[this.currentPlayerIndex];
     }
 
+    getPhysicalTurnSerial()
+    {
+        return this.physicalTurnSerial;
+    }
+
     // Selects the next players to have a go and selects the next worm they use
     nextPlayer() : string
     {
@@ -98,28 +105,33 @@ class GameStateManager
         //Networked games need this
         this.nextTurnTrigger = false;
 
-
-        if (this.currentPlayerIndex + 1 == this.players.length)
+        for (var attempts = 0; attempts < this.players.length; attempts++)
         {
-            this.currentPlayerIndex = 0;
-        }
-        else
-        {
-            this.currentPlayerIndex++;
+            if (this.currentPlayerIndex + 1 == this.players.length)
+            {
+                this.currentPlayerIndex = 0;
+            }
+            else
+            {
+                this.currentPlayerIndex++;
+            }
+
+            //If the team is all dead skip to the next player.
+            if (this.getCurrentPlayer().getTeam().getPercentageHealth() <= 0)
+            {
+                continue;
+            }
+
+            this.physicalTurnSerial++;
+            this.getCurrentPlayer().getTeam().nextWorm();
+            GameInstance.camera.cancelPan();
+            GameInstance.camera.panToPosition(Physics.vectorMetersToPixels(this.getCurrentPlayer().getTeam().getCurrentWorm().body.GetPosition()));
+
+            //gives back the server id tag
+            return this.getCurrentPlayer().id;
         }
 
-        //If the team is all dead return -1 to sign move to next player.
-        if (this.getCurrentPlayer().getTeam().getPercentageHealth() <= 0)
-        {
-            return null;
-        }
-
-        this.getCurrentPlayer().getTeam().nextWorm();
-        GameInstance.camera.cancelPan();
-        GameInstance.camera.panToPosition(Physics.vectorMetersToPixels(this.getCurrentPlayer().getTeam().getCurrentWorm().body.GetPosition()));
-
-        //gives back the server id tag
-        return this.getCurrentPlayer().id;
+        return null;
     }
 
     checkForWinner()

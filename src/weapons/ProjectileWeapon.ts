@@ -154,13 +154,22 @@ class ProjectileWeapon extends BaseWeapon
 
     update()
     {
+        // Water sinks the projectile instead of detonating on the underwater floor.
+        if (this.isActive && this.isLive && this.body
+            && typeof GameInstance != "undefined" && GameInstance.terrain
+            && Physics.metersToPixels(this.body.GetPosition().y) > GameInstance.terrain.getWaterLine())
+        {
+            GameInstance.state.tiggerNextTurn();
+            this.isLive = false;
+        }
+
         if (!this.isLive &&  this.isActive)
         {
-            //The bomb has exploded so remove it from the world         
+            //The bomb has exploded (or sunk) so remove it from the world
             Physics.removeToFastAcessList(this.body);
             Physics.world.DestroyBody(this.body);
-            this.isActive = false;   
-        } 
+            this.isActive = false;
+        }
     }
 
     draw(ctx)

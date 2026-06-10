@@ -176,17 +176,16 @@ describe("agent decision normalization", () => {
     });
 
     expect(AgentDecisionSchema.safeParse(normalized).success).toBe(true);
+    // trashTalk is a decision field rendered to chat by the controller; it is no longer
+    // materialized as a say action (the say primitive was removed entirely).
+    expect(normalized.trashTalk).toBe("Sparse JSON still works.");
     expect(normalized.actions[0]).toMatchObject({
-      tool: "say",
-      text: "Sparse JSON still works."
-    });
-    expect(normalized.actions[1]).toMatchObject({
       tool: "inspect_inventory",
       text: null,
       weapon: null,
       ms: null
     });
-    expect(normalized.actions[5]).toMatchObject({
+    expect(normalized.actions[4]).toMatchObject({
       tool: "fire",
       observeMs: 7000
     });
@@ -214,7 +213,7 @@ describe("proxy prompt contract", () => {
     expect(messages[0]).toEqual({ role: "user", content: PINNED_AGENT_PROMPT });
     expect(messages[1]?.role).toBe("user");
     expect(JSON.stringify(messages[1])).toContain("# Worms arena state");
-    expect(JSON.stringify(messages[1])).toContain("Chat language for visible say/trashTalk: Russian");
+    expect(JSON.stringify(messages[1])).toContain("Chat language for your visible trash talk: Russian");
     expect(JSON.stringify(messages)).not.toContain("\"role\":\"system\"");
   });
 
@@ -224,7 +223,7 @@ describe("proxy prompt contract", () => {
     expect(messages[0]).toEqual({ role: "user", content: PINNED_AGENT_PROMPT });
     expect(messages[1]?.role).toBe("user");
     expect(JSON.stringify(messages[1])).toContain("# Worms arena state");
-    expect(JSON.stringify(messages[1])).toContain("Chat language for visible say/trashTalk: Russian");
+    expect(JSON.stringify(messages[1])).toContain("Chat language for your visible trash talk: Russian");
     expect(JSON.stringify(messages)).not.toContain("\"role\":\"system\"");
   });
 
@@ -240,7 +239,7 @@ describe("proxy prompt contract", () => {
     expect(Array.isArray(content)).toBe(true);
     expect(content[0]).toMatchObject({
       type: "image_url",
-      image_url: { url: "data:image/jpeg;base64,AAAA", detail: "high" }
+      image_url: { url: "data:image/jpeg;base64,AAAA", detail: "auto" }
     });
     expect(content[1].type).toBe("text");
     expect(content[1].text).toContain("current start-of-turn screenshot");
@@ -402,7 +401,6 @@ describe("createAgent turn context", () => {
     expect(submitted).toMatchObject({
       trashTalk: "Помню прошлый провал.",
       actions: [
-        { tool: "say", text: "Помню прошлый провал." },
         { tool: "wait", text: null, ms: null }
       ]
     });
@@ -431,8 +429,8 @@ describe("createAgent turn context", () => {
 
     expect(JSON.parse(String(result)).accepted).toBe(true);
     expect(submitted.thought).toBe(longThought);
+    expect(submitted.trashTalk).toBe("Слишком много думаю, всё равно прыгаю.");
     expect(submitted.actions).toMatchObject([
-      { tool: "say", text: "Слишком много думаю, всё равно прыгаю." },
       { tool: "jump" },
       { tool: "wait", ms: 500 }
     ]);
@@ -476,14 +474,12 @@ describe("createAgent turn context", () => {
       thought: "Raw model text can be messy; logs keep it raw, UI should stay readable.",
       trashTalk: "Слишком предсказуемо. Сейчас найду вас.\\\"}\\n",
       actions: [
-        { tool: "say", text: "Вот и получите!\\\"} </invoke>" },
         { tool: "end_turn" }
       ]
     });
 
     expect(submitted.trashTalk).toBe("Слишком предсказуемо. Сейчас найду вас.");
     expect(submitted.actions).toMatchObject([
-      { tool: "say", text: "Вот и получите!" },
       { tool: "wait" }
     ]);
   });
@@ -499,14 +495,12 @@ describe("createAgent turn context", () => {
       thought: "Keep Russian chat clean.",
       trashTalk: "Позиция закрыта. (Position is blocked.)",
       actions: [
-        { tool: "say", text: "Ухожу вправо. (Moving right.)" },
         { tool: "walk", direction: "right", steps: 60 }
       ]
     });
 
     expect(submitted.trashTalk).toBe("Позиция закрыта.");
     expect(submitted.actions).toMatchObject([
-      { tool: "say", text: "Ухожу вправо." },
       { tool: "walk", direction: "right", steps: 60 }
     ]);
   });

@@ -267,27 +267,27 @@ module ArenaSnapshot
         var name = String(weapon.name || "");
         if (name == "Shotgun")
         {
-            return "tactical use facts: straight ray weapon with up to two shots before turn ends; needs line/aim clearance to matter; risk: wastes shots into terrain if blocked; agent primitives: aim, fire, optionally aim again and fire again.";
+            return "tactical use facts: straight ray weapon with up to two shots before turn ends; needs line/aim clearance to matter; risk: wastes shots into terrain if blocked; agent primitives: aim, fire, optionally aim again and fire again. physics: hitscan, range 900 px, no power; aim degrees = atan2(dy, dx) straight at a clear-line target; self-blast if terrain clearance at that angle is under 30 px.";
         }
         if (name == "Hand Grenade")
         {
-            return "tactical use facts: thrown explosive with 4 sec fuse and bounce; can arc/drop and bounce; risk: short throws and nearby walls cause self/friendly splash; agent primitives: aim, set_power, fire, observeMs 6500-9000.";
+            return "tactical use facts: thrown explosive with 4 sec fuse and bounce; can arc/drop and bounce; risk: short throws and nearby walls cause self/friendly splash; agent primitives: aim, set_power, fire, observeMs 6500-9000. physics: launch speed v0 px/s = percent * 12; flat range R px = v0*v0*sin(2*elev)/300 where elev is launch elevation above horizontal and gravity = 300 px/s^2; 4 sec fuse means it detonates on the timer, not on impact; choose percent so R reaches the target distance (R_max about 4800 px at 100 percent and 45 deg).";
         }
         if (name == "Holy Grenade")
         {
-            return "tactical use facts: large high-damage thrown explosive with longer fuse; large blast affects clusters and terrain pockets; risk: very large blast makes friendly/self damage likely near allies or close walls; agent primitives: aim, set_power, fire, observeMs 8000-9000.";
+            return "tactical use facts: large high-damage thrown explosive with longer fuse; large blast affects clusters and terrain pockets; risk: very large blast makes friendly/self damage likely near allies or close walls; agent primitives: aim, set_power, fire, observeMs 8000-9000. physics: launch speed v0 px/s = percent * 12; same parabola R px = v0*v0*sin(2*elev)/300, gravity = 300 px/s^2, 6 sec fuse; the blast reaches about 360 px, so keep allies and yourself well outside that radius.";
         }
         if (name == "Dynamite")
         {
-            return "tactical use facts: places explosive at current worm position; risk: nearly guaranteed self-damage if used alone or while trapped; agent primitives: select_weapon, fire, then movement is risky because fuse is short.";
+            return "tactical use facts: places explosive at current worm position; risk: nearly guaranteed self-damage if used alone or while trapped; agent primitives: select_weapon, fire, then movement is risky because fuse is short. physics: dropped at your feet with no throw (aim and power are ignored); detonates about 5 sec later inside a roughly 180 px effect radius; walk or jetpack at least 180 px away before it blows.";
         }
         if (name == "Jet Pack")
         {
-            return "tactical use facts: manual flight/repositioning over gaps, water danger, and walls; activation consumes one Jet Pack ammo and starts finite fuel; thrust is screen-relative: up decreases y, left decreases x, right increases x; feedback reports dx/dy and fuel; risk: fuel waste, ceiling impacts, water falls; agent primitives: jetpack_start, jetpack_thrust direction up/left/right/up_left/up_right with ms, jetpack_stop.";
+            return "tactical use facts: manual flight/repositioning over gaps, water danger, and walls; activation consumes one Jet Pack ammo and starts finite fuel; thrust is screen-relative: up decreases y, left decreases x, right increases x; feedback reports dx/dy and fuel; risk: fuel waste, ceiling impacts, water falls; agent primitives: jetpack_start, jetpack_thrust direction up/left/right/up_left/up_right with ms, jetpack_stop. physics (approximate, terrain dependent): thrust burns about 2 fuel per second from a pool of 20; up gains roughly 0.04 to 0.06 px per ms, sideways roughly 0.15 px per ms; a thrust that moved about 0 px means you are blocked, so change direction instead of repeating it.";
         }
         if (name == "Minigun")
         {
-            return "tactical use facts: short burst ray weapon ending the turn; needs a straight lane; risk: digs terrain/whiffs if line is blocked; agent primitives: aim, fire.";
+            return "tactical use facts: short burst ray weapon ending the turn; needs a straight lane; risk: digs terrain/whiffs if line is blocked; agent primitives: aim, fire. physics: hitscan like Shotgun, range 900 px, no power, about 3 rays per burst on the same aim; aim degrees = atan2(dy, dx) straight at a clear-line target; self-blast if clearance at that angle is under 30 px.";
         }
         if (name == "Ninja Rope")
         {
@@ -299,9 +299,63 @@ module ArenaSnapshot
         }
         if (name == "Bazooka")
         {
-            return "tactical use facts: direct projectile explosive with immediate terrain contact detonation; needs muzzle clearance and open direction to avoid instant wall hit; risk: close wall/ground impacts cause self-hit; agent primitives: aim, set_power, fire, observeMs 6500-9000.";
+            return "tactical use facts: direct projectile explosive with immediate terrain contact detonation; needs muzzle clearance and open direction to avoid instant wall hit; risk: close wall/ground impacts cause self-hit; agent primitives: aim, set_power, fire, observeMs 6500-9000. physics: launch speed v0 px/s = percent * 5.73; flat range R px = v0*v0*sin(2*elev)/300 where elev is launch elevation above horizontal and gravity = 300 px/s^2; detonates on first terrain contact so keep the whole arc clear (R_max about 1094 px at 100 percent and 45 deg); compute percent for the target distance.";
         }
         return "tactical use facts: unknown inventory item; inspect current state and avoid using it if the primitive is unclear.";
+    }
+
+    // Restates the worm's own shot inputs (weapon, power, aim) and the public launch
+    // formula's predicted flat-ground range, so the agent can compare its prediction
+    // against the actual explosion in the feedback loop and self-calibrate. This is
+    // post-shot factual feedback on inputs the agent already chose; it never says where
+    // to aim or what power to use for a target.
+    export function shotInputSummary(weapon, worm)
+    {
+        if (!weapon || !worm)
+        {
+            return "";
+        }
+
+        var name = String(weapon.name || "");
+        var lower = name.toLowerCase();
+        var aimDegrees = currentAimDegrees(worm);
+
+        if (lower.indexOf("shotgun") >= 0 || lower.indexOf("minigun") >= 0)
+        {
+            return "Physics check (your inputs this shot): weapon `" + name + "`, aim " + aimDegrees + " deg, hitscan with no power. Compare the aim you used against the target direction reported below to calibrate your next shot.";
+        }
+
+        var forceIndicator = weapon.getForceIndicator ? weapon.getForceIndicator() : null;
+        var percent = forceIndicator && forceIndicator.getForcePercentage ? Math.round(forceIndicator.getForcePercentage()) : 1;
+
+        // Per-weapon launch-speed multiplier in px/s per power percent (the same numbers
+        // the prompt teaches). Throwables share 12; the Bazooka impulse works out to 5.73.
+        var multiplier = 0;
+        if (lower.indexOf("grenade") >= 0)
+        {
+            multiplier = 12;
+        } else if (lower.indexOf("bazooka") >= 0)
+        {
+            multiplier = 5.73;
+        }
+
+        if (multiplier == 0)
+        {
+            return "Physics check (your inputs this shot): weapon `" + name + "`, power " + percent + " percent, aim " + aimDegrees + " deg. This weapon has no simple launch-speed law; use the actual result reported below to calibrate.";
+        }
+
+        var v0 = Math.round(percent * multiplier);
+        var aimRad = aimDegrees * Math.PI / 180;
+        var elevDeg = -Math.atan2(Math.sin(aimRad), Math.abs(Math.cos(aimRad))) * 180 / Math.PI;
+        var head = "Physics check (your inputs this shot): weapon `" + name + "`, power " + percent + " percent, aim " + aimDegrees + " deg";
+
+        if (elevDeg > 0.5)
+        {
+            var rangePx = Math.round((v0 * v0 * Math.sin(2 * elevDeg * Math.PI / 180)) / 300);
+            return head + " (launch elevation " + Math.round(elevDeg) + " deg above horizontal). Using this weapon's law v0 = " + percent + " * " + multiplier + " = " + v0 + " px/s, the unobstructed flat-ground range is R = v0*v0*sin(2*elev)/300 = about " + rangePx + " px. Compare that predicted range with the actual explosion distance reported below to calibrate your power and angle next turn.";
+        }
+
+        return head + " (launch points level or downward, so the flat-range formula does not apply). v0 = " + percent + " * " + multiplier + " = " + v0 + " px/s. Use the actual explosion location reported below to calibrate.";
     }
 
     function weaponInfo(weapon)
@@ -525,6 +579,7 @@ module ArenaSnapshot
         var currentPlayer = game.state.getCurrentPlayer();
         var currentWorm = currentPlayer.getTeam().getCurrentWorm();
         var currentPos = wormPosition(currentWorm);
+        var currentMuzzle = currentWorm.getMuzzlePositionPixels();
         var weapon = currentWorm.getWeapon();
         var weaponList = currentPlayer.getTeam().getWeaponManager().getListOfWeapons();
         var living = collectLivingWorms(game, currentPlayerIndex, currentWorm, currentPos);
@@ -566,7 +621,7 @@ module ArenaSnapshot
         markdown += terrainProfile(game, currentPos) + "\n\n";
 
         markdown += "## Aim clearance fan\n\n";
-        markdown += aimClearanceFan(game, currentPos, aimDegrees) + "\n\n";
+        markdown += aimClearanceFan(game, currentMuzzle, aimDegrees) + "\n\n";
 
         markdown += "## Blast and friendly-fire map\n\n";
         markdown += blastAndFriendlyFireMap(living, currentBlastRadius) + "\n\n";
@@ -618,7 +673,7 @@ module ArenaSnapshot
         }
 
         markdown += "## Action primitives\n\n";
-        markdown += "Return a batch of low-level actions only. Available tools: `say`, `inspect_inventory`, `select_weapon`, `walk`, `jump`, `backflip`, `aim`, `aim_delta`, `set_power`, `fire`, `wait`, `jetpack_start`, `jetpack_thrust`, `jetpack_stop`, `rope_fire`, `rope_swing`, `rope_contract`, `rope_expand`, `rope_release`.\n";
+        markdown += "Return a batch of low-level actions only. Available tools: `inspect_inventory`, `select_weapon`, `walk`, `jump`, `backflip`, `aim`, `aim_delta`, `set_power`, `fire`, `wait`, `jetpack_start`, `jetpack_thrust`, `jetpack_stop`, `rope_fire`, `rope_swing`, `rope_contract`, `rope_expand`, `rope_release`.\n";
         markdown += "There is no voluntary end-turn/pass tool. The game ends this worm turn through shot resolution, death, water, mine/physics turn change, or timer expiration. If control remains, the same worm receives fresh feedback while time remains.\n";
         markdown += "`walk` accepts 1-160 primitive steps. Small counts are short key holds; large counts are longer key holds. Terrain may block actual movement; feedback reports dx/dy.\n";
         markdown += "`Jet Pack` and `Ninja Rope` are manual low-level mobility tools. Jetpack screen-relative directions: `up` decreases y, `left` decreases x, `right` increases x, `up_left`, `up_right`. Rope: aim, fire, contract/expand, `rope_swing` left/right, release.\n";
@@ -809,8 +864,9 @@ module ArenaSnapshot
 
         var aimAngle = currentAimDegrees(currentWorm);
         var aimRadians = Utilies.toRadians(aimAngle);
-        var aimStartX = screenX(currentPos.x);
-        var aimStartY = screenY(currentPos.y - 28);
+        var currentMuzzle = currentWorm.getMuzzlePositionPixels();
+        var aimStartX = screenX(currentMuzzle.x);
+        var aimStartY = screenY(currentMuzzle.y);
         var aimLength = Math.round(150 * scale);
         drawActiveArrow(currentPos.x, currentPos.y - 80);
         ctx.strokeStyle = "#00E5FF";

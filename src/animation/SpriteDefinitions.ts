@@ -357,7 +357,7 @@ module Sprites
 
         shotgunFireAnimation1: {
             imageName: "wshotf",
-            frameY: 0,
+            frameY: 32/2,
             frameCount: 32,
             msPerFrame: 60,
 
@@ -365,7 +365,7 @@ module Sprites
 
          shotgunFirePump: {
             imageName: "wshotg",
-            frameY: 0,
+            frameY: 32/2,
             frameCount: 32,
             msPerFrame: 60,
 
@@ -382,7 +382,7 @@ module Sprites
 
         minigunFire: {
             imageName: "wminif",
-            frameY: 0,
+            frameY: 32/2,
             frameCount: 32,
             msPerFrame: 60,
 

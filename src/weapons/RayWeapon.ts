@@ -43,7 +43,7 @@ class RayWeapon extends BaseWeapon
     update()
     {
         super.update();
-        return (this.ammo != 0) && this.getIsActive();
+        return this.getIsActive();
     }
 
 }

@@ -1,33 +1,42 @@
 {
-  "name": "worms-armageddon-vlm",
+  "name": "llm-worms-arena",
   "version": "1.0.0",
-  "description": "LLM/VLM Worms-style browser arena benchmark",
+  "description": "Local-first LLM artillery arena for browser-based AI battles",
   "type": "commonjs",
-  "private": true,
-  "directories": {
-    "doc": "docs"
-  },
+  "private": false,
   "scripts": {
+    "start": "node dist/server/index.js",
     "dev": "npm run build:legacy && tsx server/index.ts",
-    "build": "npm run build:legacy && tsc -p tsconfig.node.json",
+    "build": "npm run build:legacy && npm run build:server && npm run typecheck",
     "build:legacy": "tsx scripts/build-legacy.ts",
-    "fetch:assets": "tsx scripts/fetch-legacy-assets.ts",
-    "fetch:assets:original": "tsx scripts/fetch-assets.ts",
+    "build:server": "tsc -p tsconfig.server.json",
+    "fetch:assets": "tsx scripts/fetch-assets.ts",
     "typecheck": "tsc -p tsconfig.node.json --noEmit",
+    "lint": "npm run lint:ts && npm run lint:css",
+    "lint:ts": "eslint server/**/*.ts scripts/**/*.ts tests/**/*.ts",
+    "lint:css": "stylelint css/menu.css",
+    "format": "prettier --write \"{README.md,ASSETS.md,CONTRIBUTING.md,CODE_OF_CONDUCT.md,SECURITY.md,AGENTS.md,.github/workflows/*.yml,*.json,*.yml,*.mjs}\"",
+    "format:check": "prettier --check \"{README.md,ASSETS.md,CONTRIBUTING.md,CODE_OF_CONDUCT.md,SECURITY.md,AGENTS.md,.github/workflows/*.yml,*.json,*.yml,*.mjs}\"",
+    "audit": "npm audit --audit-level=high",
+    "check": "npm run lint && npm run format:check && npm run audit && npm test && npm run typecheck && npm run build",
     "test": "vitest run --passWithNoTests",
-    "qa:browser": "tsx scripts/browser-qa.ts"
+    "qa:browser": "tsx scripts/browser-qa.ts",
+    "docker": "docker compose up --build",
+    "docker:build": "docker build -t llm-worms-arena:local ."
   },
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/CiaranMcCann/Worms-Armageddon-HTML5-Clone.git"
-  },
-  "keywords": [],
+  "keywords": [
+    "llm",
+    "vlm",
+    "artillery-game",
+    "browser-game",
+    "ai-arena",
+    "openai-compatible"
+  ],
   "author": "",
   "license": "Apache-2.0",
-  "bugs": {
-    "url": "https://github.com/CiaranMcCann/Worms-Armageddon-HTML5-Clone/issues"
+  "engines": {
+    "node": ">=20"
   },
-  "homepage": "https://github.com/CiaranMcCann/Worms-Armageddon-HTML5-Clone#readme",
   "dependencies": {
     "@anthropic-ai/sdk": "^0.101.0",
     "@langchain/core": "^1.1.48",
@@ -40,13 +49,20 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@types/express": "^5.0.6",
     "@types/node": "^25.9.2",
     "@types/pngjs": "^6.0.5",
+    "eslint": "^10.4.1",
+    "globals": "^17.6.0",
     "playwright": "^1.60.0",
     "pngjs": "^7.0.0",
+    "prettier": "^3.8.4",
+    "stylelint": "^17.13.0",
+    "stylelint-config-standard": "^40.0.0",
     "tsx": "^4.22.4",
     "typescript": "^6.0.3",
+    "typescript-eslint": "^8.61.0",
     "vitest": "^4.1.8"
   }
 }
