@@ -32,10 +32,15 @@ module ArenaMusic
     var unlocked = false;        // Tone.start() resolved on a user gesture
     var gestureBound = false;
     var muted = readMuted();
+    var previewDucked = false;   // Studio preview audio should not fight the live soundtrack.
 
-    var master: any = null;      // master Gain -> Compressor -> Limiter -> Destination
+    var master: any = null;      // master Gain -> moodFilter -> Compressor -> Limiter -> Destination
     var limiter: any = null;
     var comp: any = null;
+    var moodFilter: any = null;  // master-bus lowpass: opens with match tension (smooth)
+    var moodEnergy = 0.45;       // 0..1 current battle intensity
+    var lastMoodAt = 0;          // for min-dwell between mood changes
+    var GAME_BPM = 126;
 
     var scene = "none";          // "none" | "menu" | "game"
     var pending = "none";        // requested scene awaiting unlock
@@ -44,6 +49,7 @@ module ArenaMusic
     var bar = 0;                 // global bar counter driving the form
 
     var MASTER_LEVEL = 0.82;
+    var PREVIEW_DUCK_LEVEL = 0.08;
     var FADE = 0.6;              // scene fade-in seconds (avoids clicks on swap)
 
     function readMuted()
@@ -57,6 +63,12 @@ module ArenaMusic
         catch (e) { }
     }
 
+    function targetMasterLevel()
+    {
+        if (muted) { return 0; }
+        return previewDucked ? MASTER_LEVEL * PREVIEW_DUCK_LEVEL : MASTER_LEVEL;
+    }
+
     function ensureMaster()
     {
         if (!T) { return null; }
@@ -66,9 +78,23 @@ module ArenaMusic
             // Gentle glue, not a brick wall: a low ratio keeps the drums punchy
             // and the sidechain pump audible instead of squashing it flat.
             comp = new T.Compressor({ threshold: -18, ratio: 2.2, attack: 0.02, release: 0.18 }).connect(limiter);
-            master = new T.Gain(muted ? 0 : MASTER_LEVEL).connect(comp);
+            // Master-bus mood filter: brightens (opens) as match tension rises and
+            // muffles (closes) when calm. Always ramped, never switched, so the
+            // soundtrack adapts with no audible seam. Starts fully open (no effect).
+            moodFilter = new T.Filter({ frequency: 16000, type: "lowpass", rolloff: -12 }).connect(comp);
+            master = new T.Gain(targetMasterLevel()).connect(moodFilter);
         }
         return master;
+    }
+
+    // A per-scene gain between the scene's instruments and master. Re-composing the
+    // soundtrack builds a NEW scene on a NEW sceneBus and crossfades the two gains
+    // (DJ-style), so tracks blend instead of hard-cutting. Mute stays on master.
+    function sceneBus()
+    {
+        ensureMaster();
+        if (!sceneBusNode && T) { sceneBusNode = track(new T.Gain(1).connect(master)); }
+        return sceneBusNode;
     }
 
     function bindGesture()
@@ -103,7 +129,7 @@ module ArenaMusic
     // ---- public API ----------------------------------------------------------
 
     export function enterMenu() { request("menu"); }
-    export function enterGame() { request("game"); }
+    export function enterGame() { directorSpec = null; request("game"); }
     export function leave() { request("none"); }
 
     function request(name)
@@ -123,12 +149,22 @@ module ArenaMusic
         writeMuted(muted);
         if (master && T)
         {
-            try { master.gain.rampTo(muted ? 0 : MASTER_LEVEL, 0.25); }
-            catch (e) { try { master.gain.value = muted ? 0 : MASTER_LEVEL; } catch (e2) { } }
+            try { master.gain.rampTo(targetMasterLevel(), 0.25); }
+            catch (e) { try { master.gain.value = targetMasterLevel(); } catch (e2) { } }
         }
     }
 
     export function toggleMute() { setMuted(!muted); return muted; }
+
+    export function setPreviewDucked(v)
+    {
+        previewDucked = !!v;
+        if (master && T)
+        {
+            try { master.gain.rampTo(targetMasterLevel(), previewDucked ? 0.35 : 0.45); }
+            catch (e) { try { master.gain.value = targetMasterLevel(); } catch (e2) { } }
+        }
+    }
 
     // Short UI blip for menu clicks (independent of the scene loops).
     export function click()
@@ -146,6 +182,43 @@ module ArenaMusic
         catch (e) { }
     }
 
+    // ---- adaptive mood (battle scene only) -----------------------------------
+
+    function moodToEnergy(m)
+    {
+        if (m == "climax") { return 1.0; }
+        if (m == "tense") { return 0.72; }
+        if (m == "active") { return 0.45; }
+        return 0.2; // calm
+    }
+
+    // Smoothly adapt the battle music to the match's running tension (driven by the
+    // moment detector). No-op outside the game scene. Hysteresis + a minimum dwell
+    // stop a single event from ping-ponging the music; the change is a slow rampTo
+    // on the master filter + tempo, so there is no audible cut.
+    export function setMood(m)
+    {
+        if (!T || scene != "game") { return; }
+        var e = moodToEnergy(m);
+        if (Math.abs(e - moodEnergy) < 0.12) { return; }
+        var now = (typeof performance != "undefined" && performance.now) ? performance.now() : 0;
+        if (now - lastMoodAt < 4000) { return; }
+        lastMoodAt = now;
+        moodEnergy = e;
+        applyMood(1.8, 2.6);
+    }
+
+    function applyMood(filterRamp, bpmRamp)
+    {
+        if (!T) { return; }
+        // Mood only opens/closes a gentle master filter now - NO tempo change (the
+        // owner disliked the speed-up/slow-down; the music evolves by regenerating
+        // material instead). bpmRamp kept in the signature for callers.
+        try { if (moodFilter) { moodFilter.frequency.rampTo(800 + moodEnergy * 15200, filterRamp); } } catch (e) { }
+    }
+
+    export function getMoodEnergy() { return moodEnergy; }
+
     // ---- scene lifecycle -----------------------------------------------------
 
     function track(node) { disposables.push(node); return node; }
@@ -159,6 +232,7 @@ module ArenaMusic
             try { disposables[i].dispose(); } catch (e) { }
         }
         disposables = [];
+        sceneBusNode = null; // disposed above (it was tracked); next scene makes a fresh one
     }
 
     function build(name)
@@ -175,6 +249,11 @@ module ArenaMusic
         }
 
         ensureMaster();
+        // Reset the mood filter fully open on every (re)build so a leftover low
+        // cutoff from a previous battle never muffles the menu.
+        try { if (moodFilter) { moodFilter.frequency.cancelScheduledValues(0); moodFilter.frequency.value = 16000; } } catch (e) { }
+        moodEnergy = 0.45;
+        lastMoodAt = 0;
         // Duck to silence before swapping so the rebuild + Transport restart does
         // not click, then fade the new scene in smoothly.
         try { master.gain.value = 0; } catch (e) { }
@@ -183,12 +262,12 @@ module ArenaMusic
         try
         {
             if (name == "menu") { buildMenu(); }
-            else if (name == "game") { buildGame(); }
+            else if (name == "game") { if (directorSpec && directorSpec.tracks && directorSpec.tracks.length) { buildFromSpec(directorSpec); } else { buildGame(); } }
         }
         catch (e) { }
 
         try { T.Transport.start("+0.05"); } catch (e) { }
-        try { master.gain.rampTo(muted ? 0 : MASTER_LEVEL, FADE); } catch (e) { }
+        try { master.gain.rampTo(targetMasterLevel(), FADE); } catch (e) { }
     }
 
     // ---- music-theory helpers ------------------------------------------------
@@ -241,7 +320,7 @@ module ArenaMusic
 
     function buildMenu()
     {
-        var bus = ensureMaster();
+        var bus = sceneBus();
         T.Transport.bpm.value = 102;
         bar = 0;
 
@@ -336,28 +415,337 @@ module ArenaMusic
     //   block 3 : prog B, +2 climax (everything, lead transposed up a tone)
     //   A = Am - G - F - E  (Andalusian cadence: the iconic dark/driving descent)
     //   B = F  - C - G - Am (anthemic contrast)
-    var GAME_A = ["Am", "G", "F", "E"];
+    // Battle material is regenerated UNIQUELY each match (different key, tempo,
+    // chord progressions and lead theme) so no two matches - and no two clips -
+    // sound the same. An optional music-director agent overrides the seed via a
+    // spec (applyDirectorSpec). The original fixed A-minor material below is just a
+    // safe default; seedGame() replaces it per match.
+    var GAME_A = ["Am", "G", "F", "E"];     // Andalusian cadence (default/fallback)
     var GAME_B = ["F", "C", "G", "Am"];
-    // Distorted-saw LEAD theme: 4 bars at 8th-note resolution (A-minor hook).
+    var GAME_KEY = 0;                        // global semitone transpose for this match
     var GAME_THEME = [
-        "A4", null, "C5", null, "E5", null, null, "D5",   // bar 1
-        "C5", null, "B4", null, "A4", null, null, null,   // bar 2
-        "A4", null, "C5", null, "E5", null, "G5", "F5",   // bar 3
-        "E5", null, "D5", null, "C5", "B4", "A4", null    // bar 4
+        "A4", null, "C5", null, "E5", null, null, "D5",
+        "C5", null, "B4", null, "A4", null, null, null,
+        "A4", null, "C5", null, "E5", null, "G5", "F5",
+        "E5", null, "D5", null, "C5", "B4", "A4", null
     ];
+    var directorSpec: any = null;           // optional LLM-authored Tone.js music spec
+    var sceneBusNode: any = null;           // gain between the current scene + master (enables crossfades)
+
+    // Progressions over the chord dictionary's keys (Am/G/F/E/C/Dm) so bass, stabs
+    // and arp voicings always resolve. Two are picked per match.
+    var PROG_POOL = [
+        ["Am", "G", "F", "E"], ["Am", "F", "C", "G"], ["Am", "F", "G", "E"],
+        ["Am", "C", "F", "E"], ["Am", "G", "Dm", "E"], ["Am", "F", "Dm", "E"],
+        ["Dm", "Am", "F", "E"], ["Am", "C", "G", "E"], ["F", "C", "G", "Am"],
+        ["Am", "Dm", "G", "E"], ["Dm", "F", "C", "G"], ["Am", "F", "C", "E"]
+    ];
+    // A natural-minor scale (two+ octaves) the generated lead hook walks through.
+    var THEME_SCALE = ["A4", "B4", "C5", "D5", "E5", "F5", "G5", "A5", "B5", "C6", "D6", "E6"];
+
+    function pickProg(exclude)
+    {
+        var i = Math.floor(Math.random() * PROG_POOL.length);
+        if (exclude != null && i == exclude) { i = (i + 1) % PROG_POOL.length; }
+        return i;
+    }
+
+    // Fresh 32-slot (4-bar) lead hook by a rest-gated random walk through the scale,
+    // denser on strong beats - unique but always in-scale (so it harmonises).
+    function genTheme()
+    {
+        var out = [];
+        var idx = Math.floor(Math.random() * 3);
+        for (var i = 0; i < 32; i++)
+        {
+            var strong = (i % 4 == 0);
+            var p = strong ? 0.85 : (i % 2 == 0 ? 0.55 : 0.3);
+            if (Math.random() < p)
+            {
+                var step = [-2, -1, -1, 0, 1, 1, 2, 3][Math.floor(Math.random() * 8)];
+                idx = Math.max(0, Math.min(THEME_SCALE.length - 1, idx + step));
+                out.push(THEME_SCALE[idx]);
+            }
+            else { out.push(null); }
+        }
+        out[0] = THEME_SCALE[Math.floor(Math.random() * 3)];
+        return out;
+    }
+
+    // Procedurally seed unique battle material for this match.
+    function seedGame()
+    {
+        GAME_BPM = 116 + Math.floor(Math.random() * 18); // 116..133
+        GAME_KEY = [-3, -2, -1, 0, 0, 1, 2, 3, 4][Math.floor(Math.random() * 9)];
+        reseedMaterial();
+    }
+
+    // Pick NEW progressions + a NEW lead theme (keeping the match's key/tempo). Called
+    // once per 16-bar form cycle so the soundtrack keeps GENERATING through the match
+    // instead of looping the same 16 bars over and over.
+    function reseedMaterial()
+    {
+        var a = pickProg(null);
+        GAME_A = PROG_POOL[a];
+        GAME_B = PROG_POOL[pickProg(a)];
+        GAME_THEME = genTheme();
+    }
+
+    // Apply an LLM-authored Tone.js soundtrack spec and (re)build the battle scene
+    // from it. The spec defines genre/tempo/scale + every instrument track + the
+    // arrangement, so the music is fully agent-generated. Rebuilds live so it takes
+    // effect immediately. Invalid specs are ignored (procedural fallback stays).
+    export function applyDirectorSpec(spec)
+    {
+        try
+        {
+            if (!spec || typeof spec != "object" || !spec.tracks || !spec.tracks.length) { return false; }
+            return recomposeGame(spec);
+        }
+        catch (e) { return false; }
+    }
+
+    // Swap to a new soundtrack spec with a DJ-style crossfade: build the new scene on a
+    // fresh silent bus, ramp the old bus out + the new in (and the tempo across) over a
+    // few seconds, then dispose the old scene. No hard cut. Outside the live game scene
+    // it just stores the spec for the next build.
+    function recomposeGame(spec)
+    {
+        if (!T) { return false; }
+        if (scene != "game" || !sceneBusNode || !unlocked)
+        {
+            directorSpec = spec;
+            return true;
+        }
+        try
+        {
+            var FADE2 = 3.6;
+            var oldBus = sceneBusNode;
+            var oldDisp = disposables;
+            disposables = [];                                  // new scene owns a fresh disposables list
+            sceneBusNode = track(new T.Gain(0).connect(master)); // silent new bus
+            directorSpec = spec;
+            buildFromSpec(spec, FADE2);                         // build new scene + ramp tempo
+            try { oldBus.gain.rampTo(0, FADE2); } catch (e) { }
+            try { sceneBusNode.gain.rampTo(1, FADE2); } catch (e) { }
+            setTimeout(function ()
+            {
+                for (var i = oldDisp.length - 1; i >= 0; i--) { try { oldDisp[i].dispose(); } catch (e) { } }
+            }, Math.round((FADE2 + 0.6) * 1000));
+            return true;
+        }
+        catch (e)
+        {
+            directorSpec = spec;
+            try { scene = "none"; build("game"); } catch (e2) { }
+            return true;
+        }
+    }
+
+    export function getMusicSeed()
+    {
+        if (directorSpec)
+        {
+            return { genre: directorSpec.genre, bpm: directorSpec.bpm, tracks: (directorSpec.tracks || []).length, sections: (directorSpec.sections || []).length, director: true };
+        }
+        return { bpm: GAME_BPM, key: GAME_KEY, progA: GAME_A, progB: GAME_B, director: false };
+    }
+
+    // ---- generic LLM-spec Tone.js renderer -----------------------------------
+
+    function specMakeSynth(t)
+    {
+        var name = t.synth || "Synth";
+        var opts: any = {};
+        if (t.oscillator) { opts.oscillator = { type: t.oscillator }; }
+        try
+        {
+            switch (name)
+            {
+                case "MembraneSynth": return new T.MembraneSynth();
+                case "NoiseSynth": return new T.NoiseSynth();
+                case "MetalSynth": return new T.MetalSynth();
+                case "FMSynth": return new T.FMSynth(opts);
+                case "AMSynth": return new T.AMSynth(opts);
+                case "MonoSynth": return new T.MonoSynth(opts);
+                case "DuoSynth": return new T.DuoSynth();
+                case "PluckSynth": return new T.PluckSynth();
+                case "PolySynth": return new T.PolySynth(T.Synth);
+                default: return new T.Synth(opts);
+            }
+        }
+        catch (e) { try { return new T.Synth(); } catch (e2) { return null; } }
+    }
+
+    function specMakeFx(name)
+    {
+        try
+        {
+            switch (String(name))
+            {
+                case "distortion": return new T.Distortion({ distortion: 0.32, wet: 0.32 });
+                case "reverb": return new T.Reverb({ decay: 2.2, wet: 0.22 });
+                case "delay": return new T.FeedbackDelay({ delayTime: "8n", feedback: 0.25, wet: 0.2 });
+                case "chorus": return new T.Chorus({ frequency: 0.6, depth: 0.6, wet: 0.4 }).start();
+                case "bitcrusher": return new T.BitCrusher(6);
+                case "autofilter": return new T.AutoFilter({ frequency: "4n", depth: 0.6 }).start();
+                case "phaser": return new T.Phaser({ frequency: 0.4, octaves: 3, wet: 0.3 });
+                default: return null;
+            }
+        }
+        catch (e) { return null; }
+    }
+
+    function specConnect(inst, fxList, bus)
+    {
+        try
+        {
+            if (Array.isArray(fxList) && fxList.length)
+            {
+                var chain = [];
+                for (var i = 0; i < fxList.length; i++)
+                {
+                    var f = specMakeFx(fxList[i]);
+                    if (f) { chain.push(track(f)); }
+                }
+                if (chain.length)
+                {
+                    for (var j = 0; j < chain.length - 1; j++) { chain[j].connect(chain[j + 1]); }
+                    chain[chain.length - 1].connect(bus);
+                    inst.connect(chain[0]);
+                    return;
+                }
+            }
+        }
+        catch (e) { }
+        try { inst.connect(bus); } catch (e) { }
+    }
+
+    function buildFromSpec(spec, crossfadeSec)
+    {
+        var bus = sceneBus();
+        var bpm = Math.max(50, Math.min(200, spec.bpm || 120));
+        // Crossfade -> RAMP the shared-Transport tempo so the outgoing + incoming scenes
+        // beatmatch smoothly; a fresh build sets it directly.
+        if (crossfadeSec) { try { T.Transport.bpm.rampTo(bpm, crossfadeSec); } catch (e) { try { T.Transport.bpm.value = bpm; } catch (e2) { } } }
+        else { try { T.Transport.bpm.value = bpm; } catch (e) { } }
+        // Per-scene local state so a crossfading old + new scene never clobber each other.
+        var sBar = 0;
+        var sActive: any = {};
+
+        var rootMidi = 48;
+        try { rootMidi = T.Frequency(spec.rootNote || "C2").toMidi(); } catch (e) { }
+        var scale = (spec.scaleSemitones && spec.scaleSemitones.length) ? spec.scaleSemitones : [0, 2, 3, 5, 7, 8, 10];
+
+        function degNote(d)
+        {
+            try
+            {
+                var n = scale.length;
+                var oct = Math.floor(d / n);
+                var idx = ((d % n) + n) % n;
+                var midi = rootMidi + oct * 12 + scale[idx];
+                midi = Math.max(16, Math.min(104, midi));
+                return T.Frequency(midi, "midi").toNote();
+            }
+            catch (e) { return "C3"; }
+        }
+        function triad(d) { return [degNote(d), degNote(d + 2), degNote(d + 4)]; }
+
+        // Arrangement: cycle the sections so the track develops; gate tracks per section.
+        var sections = [];
+        var srcSections = spec.sections || [];
+        for (var s = 0; s < srcSections.length; s++)
+        {
+            var sec = srcSections[s];
+            if (sec && Array.isArray(sec.active)) { sections.push({ bars: Math.max(1, Math.min(16, sec.bars || 4)), active: sec.active }); }
+        }
+        if (!sections.length)
+        {
+            var all = [];
+            for (var a = 0; a < (spec.tracks || []).length; a++) { if (spec.tracks[a] && spec.tracks[a].name) { all.push(spec.tracks[a].name); } }
+            sections.push({ bars: 8, active: all });
+        }
+        var totalBars = 0;
+        for (var ti2 = 0; ti2 < sections.length; ti2++) { totalBars += sections[ti2].bars; }
+        function applySection(bar)
+        {
+            var b = ((bar % totalBars) + totalBars) % totalBars;
+            var acc = 0, cur = sections[0];
+            for (var i = 0; i < sections.length; i++) { acc += sections[i].bars; if (b < acc) { cur = sections[i]; break; } }
+            sActive = {};
+            for (var k = 0; k < cur.active.length; k++) { sActive[cur.active[k]] = true; }
+        }
+        applySection(0);
+        track(new T.Loop(function () { sBar++; applySection(sBar); }, "1m")).start("1m");
+
+        var tracks = (spec.tracks || []).slice(0, 12);
+        for (var t = 0; t < tracks.length; t++)
+        {
+            (function (tr)
+            {
+                try
+                {
+                    if (!tr || !Array.isArray(tr.notes) || !tr.notes.length) { return; }
+                    var inst = specMakeSynth(tr);
+                    if (!inst) { return; }
+                    if (typeof tr.volumeDb == "number") { try { inst.volume.value = Math.max(-40, Math.min(6, tr.volumeDb)); } catch (e) { } }
+                    track(inst);
+                    specConnect(inst, tr.fx, bus);
+
+                    var role = String(tr.role || "lead").toLowerCase();
+                    var isDrum = /kick|snare|hat|tom|perc/.test(role);
+                    var isChord = /chord|pad|stab/.test(role);
+                    var spb = (tr.stepsPerBar == 4 || tr.stepsPerBar == 8 || tr.stepsPerBar == 16) ? tr.stepsPerBar : (tr.notes.length || 16);
+                    var sub = (spb <= 4) ? "4n" : (spb <= 8 ? "8n" : "16n");
+                    var idxArr = [];
+                    for (var n = 0; n < tr.notes.length; n++) { idxArr.push(n); }
+
+                    var seq = new T.Sequence(function (time, step)
+                    {
+                        if (!sActive[tr.name]) { return; }
+                        var v = tr.notes[step];
+                        if (v == null || v === 0 || v === false) { if (!isDrum) { return; } if (!v) { return; } }
+                        try
+                        {
+                            if (isDrum)
+                            {
+                                if (tr.synth == "NoiseSynth" || tr.synth == "MetalSynth") { inst.triggerAttackRelease(sub, time, 0.9); }
+                                else { inst.triggerAttackRelease(role == "kick" ? "C1" : (role == "tom" ? "G1" : "C2"), sub, time, 0.95); }
+                            }
+                            else if (isChord)
+                            {
+                                inst.triggerAttackRelease(triad(Number(v)), sub, time, 0.5);
+                            }
+                            else
+                            {
+                                inst.triggerAttackRelease(degNote(Number(v)), sub, time, 0.8);
+                            }
+                        }
+                        catch (e) { }
+                    }, idxArr, sub);
+                    track(seq);
+                    seq.start(0);
+                }
+                catch (e) { }
+            })(tracks[t]);
+        }
+    }
 
     // Per-bar state derived from the form.
     function gameBlock() { return Math.floor((bar % 16) / 4); }
     function gameProg() { return (gameBlock() <= 1) ? GAME_A : GAME_B; }
     function gameSemi() { return (gameBlock() == 3) ? 2 : 0; }   // +2 climax
+    function gameXpose() { return gameSemi() + GAME_KEY; }       // climax lift + match key
     function gameFull() { return gameBlock() >= 1; }
     function gameLead() { var b = gameBlock(); return b == 1 || b == 3; }
     function gameChordName() { return gameProg()[bar % 4]; }
 
     function buildGame()
     {
-        var bus = ensureMaster();
-        var BPM = 126;
+        var bus = sceneBus();
+        if (!directorSpec) { seedGame(); }   // unique procedural material each match
+        var BPM = GAME_BPM;
         T.Transport.bpm.value = BPM;
         bar = 0;
         var barLen = T.Time("1m").toSeconds();
@@ -393,6 +781,9 @@ module ArenaMusic
         {
             bar++;
             var pos = bar % 16;
+            // Regenerate the chord progressions + lead theme at the top of every form
+            // cycle so the music keeps evolving instead of looping the same 16 bars.
+            if (pos == 0 && bar > 0) { try { reseedMaterial(); } catch (e) { } }
             // Riser into the two "full" entries (block 1 at bar 4, climax at bar 12).
             if (pos == 3 || pos == 11)
             {
@@ -415,7 +806,7 @@ module ArenaMusic
                 {
                     for (var k = 0; k < 8; k++)
                     {
-                        tom.triggerAttackRelease(tomRoots[k % 4], "16n", time + barLen * 0.5 + (barLen / 16) * k, 0.5 + k * 0.05);
+                        tom.triggerAttackRelease(tr(tomRoots[k % 4], GAME_KEY), "16n", time + barLen * 0.5 + (barLen / 16) * k, 0.5 + k * 0.05);
                     }
                 }
                 catch (e) { }
@@ -468,7 +859,7 @@ module ArenaMusic
         bass.connect(bassFilter2); bassFilter2.connect(bassDrive); bassDrive.connect(pumpGain);
         track(new T.Sequence(function (time, step)
         {
-            var r = tr(ROOT[gameChordName()], gameSemi());
+            var r = tr(ROOT[gameChordName()], gameXpose());
             // Octave accent on the off-16ths for movement.
             var note = (step % 4 == 2) ? octaveUp(r) : r;
             bass.triggerAttackRelease(note, "16n", time, step % 2 == 0 ? 0.95 : 0.7);
@@ -486,7 +877,7 @@ module ArenaMusic
         {
             if (on && gameFull())
             {
-                stab.triggerAttackRelease(trc(POWER[gameChordName()], gameSemi()), "8n", time, 0.7);
+                stab.triggerAttackRelease(trc(POWER[gameChordName()], gameXpose()), "8n", time, 0.7);
             }
         }, stabPat, "8n")).start(0);
 
@@ -508,7 +899,7 @@ module ArenaMusic
             if (!gameLead()) { return; }
             var note = at(GAME_THEME, slot);
             if (note == null) { return; }
-            lead.triggerAttackRelease(tr(note, gameSemi()), "8n", time, 0.7);
+            lead.triggerAttackRelease(tr(note, gameXpose()), "8n", time, 0.7);
         }, [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
             16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31], "8n")).start(0);
 
@@ -525,7 +916,7 @@ module ArenaMusic
         track(new T.Sequence(function (time, slot)
         {
             if (gameBlock() != 3) { return; }
-            var tones = trc(TRIAD[gameChordName()], gameSemi());
+            var tones = trc(TRIAD[gameChordName()], gameXpose());
             arp.triggerAttackRelease(octaveUp(at(tones, arpStep)), "16n", time, 0.4);
             arpStep++;
         }, [0, 1, 2, 3], "16n")).start(0);

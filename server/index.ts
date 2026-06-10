@@ -3,6 +3,8 @@ import express from "express";
 import fs from "node:fs";
 import path from "node:path";
 import { decideTurnStream, listModelsForConnection } from "./agent";
+import { editMontage } from "./montage";
+import { directMusic } from "./music";
 import { getAgentLogFile, logAgentEvent } from "./agent-log";
 
 const serverParent = path.resolve(__dirname, "..");
@@ -116,6 +118,30 @@ app.post("/api/models", async (req, res) => {
     res.json({ ok: true, models });
   } catch (error) {
     res.json({ ok: false, error: (error as Error).message, models: [] });
+  }
+});
+
+// Optional BYOK "AI editor": refines the highlight EDL (pick/order moments +
+// title) using the user's connection. Additive + fairness-free; always 200 with
+// { refined } so the browser falls back to its deterministic edit on no key.
+app.post("/api/montage/edit", async (req, res) => {
+  try {
+    const result = await editMontage(req.body);
+    res.json(result);
+  } catch (error) {
+    res.json({ refined: false, reason: (error as Error).message });
+  }
+});
+
+// Optional BYOK "music director": one lightweight agent generates a Tone.js music
+// spec for this match's soundtrack. Additive + fairness-free; no key -> { ok:false }
+// and the browser uses its procedural per-match generation.
+app.post("/api/music/direct", async (req, res) => {
+  try {
+    const result = await directMusic(req.body);
+    res.json(result);
+  } catch (error) {
+    res.json({ ok: false, reason: (error as Error).message });
   }
 });
 

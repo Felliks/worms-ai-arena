@@ -96,17 +96,10 @@ class ProjectileWeapon extends BaseWeapon
         this.body = this.fixture.GetBody();
         this.body.ApplyImpulse(initalVelocity,this.body.GetPosition());
 
-        if (initalVelocity.x >= 0)
-        {
-            //TODO make this even better, by setting the rotation off
-            // the inital velocity of the projectile.
-            // Looks ok for the mo, other more important things to do atm.
-            this.body.SetAngularVelocity(0.7);
-        } else
-        {
-            this.body.SetAngularVelocity(-0.7);
-        }
-
+        // No constant spin: the missile sprite is a 32-frame rotation sheet and
+        // draw() orients it by selecting the frame that matches its travel
+        // direction. The old fixed angular velocity made the rocket tumble
+        // instead of following its aim/arc.
         this.body.SetUserData(this);
 
         Physics.addToFastAcessList(this.body);
@@ -176,6 +169,22 @@ class ProjectileWeapon extends BaseWeapon
     {
         if (this.isActive && this.isLive)
         {
+            // missile.png is 32 frames of the rocket pre-rendered around a full
+            // circle. Point it along its travel direction by SELECTING the matching
+            // frame (the same technique the worm aim sprites use) instead of rotating
+            // the canvas - that keeps the nose following the aim/arc. Empirically the
+            // sheet advances 360/32 deg per frame with frame 0 at about -69 deg, so
+            //   frame = round((travelAngleDeg + 69) * 32 / 360)  (wrapped to 0..31).
+            var v = this.body.GetLinearVelocity();
+            var total = this.projectileSprite.getTotalFrames();
+            if (v.x * v.x + v.y * v.y > 0.0001)
+            {
+                var angleDeg = Math.atan2(v.y, v.x) * 180 / Math.PI;
+                var frame = Math.round((angleDeg + 69) * total / 360);
+                frame = ((frame % total) + total) % total;
+                this.projectileSprite.setCurrentFrame(frame);
+            }
+
             ctx.save()
 
             ctx.translate(
@@ -183,13 +192,9 @@ class ProjectileWeapon extends BaseWeapon
             this.body.GetPosition().y * Physics.worldScale
             )
 
-            ctx.rotate(this.body.GetAngle())
-
-            var radius = this.fixture.GetShape().GetRadius() * 2 * Physics.worldScale;
-
             this.projectileSprite.draw(ctx,
             -this.projectileSprite.getFrameWidth() / 2,
-            -this.projectileSprite.getFrameHeight() / 1.5
+            -this.projectileSprite.getFrameHeight() / 2
             );
 
             ctx.restore()

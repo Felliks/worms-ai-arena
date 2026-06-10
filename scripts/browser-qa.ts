@@ -80,7 +80,11 @@ async function main() {
   try {
     await waitForServer(baseUrl);
 
-    const browser = await chromium.launch();
+    const browser = await chromium.launch({
+      headless: true,
+      channel: "chrome",
+      args: ["--autoplay-policy=no-user-gesture-required", "--no-sandbox"]
+    });
     const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
 
     const consoleLogs: string[] = [];
@@ -193,6 +197,7 @@ async function main() {
     // ---- Phase E: LLM arena (mock by default) ----------------------------
     const arenaUrl = `${baseUrl}/?arena=llm-vs-llm&models=${encodeURIComponent(models)}&turnTime=120&chatLang=Russian&memoryStrategy=summary&historySize=8&maxBatchesPerTurn=4`;
     await page.goto(arenaUrl, { waitUntil: "domcontentloaded", timeout: 20_000 });
+    await page.mouse.click(200, 200);
     await page.waitForFunction(
       () => {
         const game = (globalThis as any).GameInstance;
@@ -218,6 +223,76 @@ async function main() {
     );
     note(!(Number(timerText) > 90), `turnTime=120 was not applied; timer text is ${timerText}.`);
 
+    // The single in-game clip button must appear once the arena match starts
+    // recording (and MatchRecorder must auto-start). Deterministic on mock models.
+    const clipButtonSeen = await page
+      .waitForFunction(
+        () => {
+          const overlay = document.querySelector("#waVideoOverlay");
+          const btn = document.querySelector("#waClipButton");
+          return Boolean(btn && overlay && getComputedStyle(overlay as Element).display !== "none");
+        },
+        undefined,
+        { timeout: 20_000 }
+      )
+      .then(() => true)
+      .catch(() => false);
+    note(!clipButtonSeen, "In-game clip button (#waClipButton) did not appear in the mock arena.");
+    const recordingActive = await page.evaluate(() => {
+      const rec = (globalThis as any).MatchRecorder;
+      return Boolean(rec && typeof rec.isRecording === "function" && rec.isRecording());
+    });
+    note(!recordingActive, "MatchRecorder did not auto-start recording in the mock arena.");
+    let footageReady = false;
+    const footageDeadline = Date.now() + 12_000;
+    while (!footageReady && Date.now() < footageDeadline) {
+      footageReady = await page.evaluate(async () => {
+        const rec = (globalThis as any).MatchRecorder;
+        if (!rec || typeof rec.fullClip !== "function") {
+          return false;
+        }
+        return await new Promise<boolean>((resolve) => {
+          rec.fullClip((blob: Blob | null) => resolve(Boolean(blob && blob.size > 50_000)));
+        });
+      });
+      if (!footageReady) {
+        await page.waitForTimeout(750);
+      }
+    }
+    note(!footageReady, "MatchRecorder did not produce a non-empty flushed master clip.");
+
+    // Render a tiny platform clip from the live master. This catches MP4-timeslice
+    // regressions where the synchronous full buffer only contains the init chunk,
+    // so VideoStudio Generate returns null even though recording is active.
+    const renderSmoke = await page.evaluate(async () => {
+      const rec = (globalThis as any).MatchRecorder;
+      const timeline = (globalThis as any).MatchTimeline;
+      if (!rec || typeof rec.render !== "function" || !timeline || typeof timeline.getScenarios !== "function") {
+        return { ok: false, reason: "missing-api" };
+      }
+      const scenario = timeline.getScenarios().find((item: any) => item && item.segments && item.segments.length);
+      if (!scenario) {
+        return { ok: false, reason: "no-scenario" };
+      }
+      const first = scenario.segments[0] || {};
+      const t0 = Math.max(0, Number(first.t0) || 0);
+      const naturalEnd = Number(first.t1) || (t0 + 2.5);
+      const t1 = Math.max(t0 + 1, Math.min(naturalEnd, t0 + 2.5));
+      return await new Promise<{ ok: boolean; reason?: string; size?: number; type?: string }>((resolve) => {
+        rec.render(
+          { platform: "instagram", segments: [{ t0, t1, rate: 1 }], maxMs: 30_000 },
+          (blob: Blob | null) => {
+            if (!blob) {
+              resolve({ ok: false, reason: "null-blob" });
+              return;
+            }
+            resolve({ ok: blob.size > 50_000, size: blob.size, type: blob.type || "" });
+          }
+        );
+      });
+    });
+    note(!renderSmoke.ok, `MatchRecorder.render failed during browser QA: ${JSON.stringify(renderSmoke)}.`);
+
     note(pageErrors.length > 0, `Page errors: ${pageErrors.join(" | ")}`);
     note(failedRequests.length > 0, `Failed requests: ${failedRequests.join(" | ")}`);
 
@@ -236,6 +311,9 @@ async function main() {
           arenaExternalScripts,
           timerText,
           thoughtBubblePreview: bubbleText.slice(0, 300),
+          clipButton: clipButtonSeen,
+          recording: recordingActive,
+          renderSmoke,
           pageErrors,
           failedRequests
         },

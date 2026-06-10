@@ -259,16 +259,22 @@ class ThrowableWeapon extends BaseWeapon
                 wormPosInPixels.y
             )
 
-            ctx.save()
-            ctx.rotate(this.body.GetAngle())
+            // Tumbling throwables (everything except the upright, fuse-animated Dynamite) use a
+            // rotation sprite sheet: pick the frame for the current body angle so the pre-rendered
+            // art tumbles correctly (e.g. the Holy Grenade's cross sits where it should per angle)
+            // instead of rotating a single static frame. Dynamite keeps its fuse animation upright.
+            if ((this instanceof Dynamite) == false)
+            {
+                var fc = this.sprite.getTotalFrames();
+                var fr = Math.round(this.body.GetAngle() / (2 * Math.PI) * fc);
+                this.sprite.setCurrentFrame(((fr % fc) + fc) % fc);
+            }
 
-            var radius = this.fixture.GetShape().GetRadius() * 2 * Physics.worldScale;
-
+            // Center the frame on the body (use the frame size, not the circle radius, so tall
+            // non-square frames like the dynamite stick are not drawn vertically off-center).
             this.sprite.draw(ctx,
-           -radius,
-           -radius);
-
-            ctx.restore()
+           -this.sprite.getFrameWidth() / 2,
+           -this.sprite.getFrameHeight() / 2);
 
             ctx.drawImage(ThrowableWeapon.numberBox, 10,-40);
             ctx.fillStyle = 'rgba(255,0,0,255)';

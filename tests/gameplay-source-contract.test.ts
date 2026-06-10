@@ -171,4 +171,69 @@ describe("gameplay source contracts", () => {
 
     expect(terrain).toContain("this.bufferCanvasContext.moveTo(tmp.xPos + tmp.radius, tmp.yPos)");
   });
+
+  it("orients the missile by selecting the rotation frame for its travel direction, not a fixed spin", () => {
+    const projectile = readSource("src/weapons/ProjectileWeapon.ts");
+
+    // missile.png is a 32-frame rotation sheet: point the rocket by choosing the frame that matches
+    // its velocity heading. The old code span the body at a constant rate and drew a single frame
+    // rotated by the body angle, so the rocket never followed its aim/arc.
+    expect(projectile).toContain("GetLinearVelocity()");
+    expect(projectile).toContain("getTotalFrames()");
+    expect(projectile).toContain("setCurrentFrame(frame)");
+    // The constant tumble and the canvas rotation are both gone.
+    expect(projectile).not.toContain("SetAngularVelocity(0.7)");
+    expect(projectile).not.toContain("ctx.rotate(this.body.GetAngle())");
+  });
+
+  it("only plays the worm fall/jump animation above a real airborne speed, so a held weapon does not jitter on unstable terrain", () => {
+    const anim = readSource("src/WormAnimationManger.ts");
+
+    // A worm resting on a vine never settles to exactly 0 vy; with canJump == 0 the old `> 0` / `< 0`
+    // checks flipped it between the fall and jump poses every frame, jerking the held weapon up/down.
+    expect(anim).toContain("AIRBORNE_VY");
+    expect(anim).toContain("GetLinearVelocity().y > AIRBORNE_VY");
+    expect(anim).toContain("GetLinearVelocity().y < -AIRBORNE_VY");
+    // The naive zero-threshold checks must be gone.
+    expect(anim).not.toContain("GetLinearVelocity().y > 0)");
+    expect(anim).not.toContain("GetLinearVelocity().y < 0)");
+  });
+
+  it("gives hitscan weapons an authoritative deactivate so a killed owner cannot deadlock the turn", () => {
+    const ray = readSource("src/weapons/RayWeapon.ts");
+
+    // Shotgun/Minigun otherwise clear isActive only inside a post-fire setTimeout in update(); if the
+    // owner dies first, update() stops, isActive stays true forever and areAllWeaponsDeactived() never
+    // becomes true. RayWeapon.deactivate() must authoritatively clear the active state.
+    expect(ray).toContain("deactivate()");
+    expect(ray).toContain("this.setIsActive(false)");
+  });
+
+  it("releases a dying worm's active non-throwable weapon before the death animation", () => {
+    const anim = readSource("src/WormAnimationManger.ts");
+
+    // A Drill locks the worm sprite (blocking the death callback -> orphaned attention semaphore) and a
+    // Shotgun/Minigun keeps isActive true; either deadlocks the match. The death block must deactivate
+    // the active non-throwable/projectile weapon first. Throwables/projectiles are intentionally left
+    // for Worm.update()'s orphan handler to detonate.
+    const deathBlock = anim.slice(anim.indexOf("dyingWeapon"));
+    expect(anim).toContain("dyingWeapon");
+    expect(deathBlock).toContain("getIsActive()");
+    expect(deathBlock).toContain("instanceof ThrowableWeapon");
+    expect(deathBlock).toContain("instanceof ProjectileWeapon");
+    expect(deathBlock).toContain("dyingWeapon.deactivate()");
+  });
+
+  it("snaps a worm to the static aim pose when aiming so the held weapon follows the crosshair", () => {
+    const target = readSource("src/Target.ts");
+
+    // While the slow take-out animation is still playing it has fewer frames (so the aim frame is
+    // clamped wrong) and keeps advancing (so the held weapon sweeps on its own, pointing at the
+    // ground instead of the crosshair). setAimDegrees must switch to the aim sheet, set the frame,
+    // and freeze it (finished = true) so the weapon tracks the aim.
+    const aimBlock = target.slice(target.indexOf("setAimDegrees"));
+    expect(aimBlock).toContain("getCurrentWeapon().takeAimAnimations");
+    expect(aimBlock).toContain("setSpriteDef(aimSprite)");
+    expect(aimBlock).toContain("this.worm.finished = true");
+  });
 });

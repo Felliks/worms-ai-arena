@@ -21,6 +21,7 @@ class Shotgun extends RayWeapon
     fireAnimationIndex: number;
     animationSheetChangeTimer: Timer;
     shotsTaken;
+    lastShotWorm;
 
     constructor(ammo)
     {
@@ -64,11 +65,28 @@ class Shotgun extends RayWeapon
             this.animationSheetChangeTimer.reset();
             this.fireAnimationIndex = 0;
             AssetManager.getSound("SHOTGUNRELOAD").play(1, 0.3);
+            // shotsTaken counts the barrels fired this worm-turn (2 barrels = turn ends). The single
+            // Shotgun instance is shared for the whole match, so reset the count whenever a different
+            // worm picks it up - otherwise a leftover count from a turn that ended after one shot
+            // makes the next worm fire a single barrel and end its turn early.
+            if (this.lastShotWorm !== worm)
+            {
+                this.shotsTaken = 0;
+            }
+            this.lastShotWorm = worm;
             this.shotsTaken++;
             return true;
         }
 
         return false;
+    }
+
+    deactivate()
+    {
+        super.deactivate();
+        this.animationSheetChangeTimer.pause();
+        this.fireAnimationIndex = 0;
+        this.shotsTaken = 0;
     }
 
     update()
@@ -113,6 +131,12 @@ class Shotgun extends RayWeapon
                 this.fireAnimationIndex = 0;
 
                 setTimeout(() => {
+                    // If the worm already died (and the weapon was deactivated by the death sequence),
+                    // do not touch the corpse's sprite or fire a spurious turn change.
+                    if (this.getIsActive() == false)
+                    {
+                        return;
+                    }
                     this.setIsActive(false);
                     this.worm.swapSpriteSheet(this.fireAnimations[this.fireAnimationIndex]);
 

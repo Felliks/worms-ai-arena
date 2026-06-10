@@ -34,8 +34,34 @@ const ACTION_TOOLS = [
 const ActionToolSchema = z.enum(ACTION_TOOLS);
 const DirectionSchema = z.enum(["left", "right", "up", "up_left", "up_right"]);
 
+function visibleChatDescription(language?: string): string {
+  const requested = (language || "").trim();
+  return [
+    "Visible spectator speech for the worm.",
+    "Follow the same visible-chat cheatsheet as the first plain-text line:",
+    requested ? `the requested chat language is ${requested}; use ${requested} only;` : "requested chat language only;",
+    "trash talk / roast / comedic jab only;",
+    "no tactical scratchpad, coordinates, dx/dy, pixel distances, angles, power values, formulas, action plans, JSON, Markdown, or translations.",
+    "Keep it to one punchy sentence and make it match or closely polish the spoken first line."
+  ].join(" ");
+}
+
+const VISIBLE_CHAT_DESCRIPTION = visibleChatDescription();
+
+// Optional, model-emitted clip/drama metadata. PURELY cosmetic narration for the
+// spectator clip pipeline: it is never read by targeting, aim, power, weapon,
+// actions, damage, or any fairness logic, and it does not add a tool or relax the
+// single-shot boundary. It only annotates the turn for the highlight reel + biases
+// the (cosmetic) soundtrack mood, and is forwarded verbatim through the NDJSON.
+const ClipSignalSchema = z.object({
+  clipWorthy: z.boolean().optional(),
+  intent: z.string().max(120).optional(),
+  mood: z.enum(["calm", "active", "tense", "climax", "comedic", "somber"]).optional(),
+  dramaTags: z.array(z.string().max(40)).max(8).optional()
+});
+
 const RawActionSchema = z.object({
-  tool: z.string(),
+  tool: z.string().describe("One low-level action primitive from the allowed action list."),
   text: z.any().optional(),
   weapon: z.any().optional(),
   index: z.any().optional(),
@@ -61,20 +87,32 @@ const ActionSchema = z.object({
 });
 
 const RawAgentDecisionSchema = z.object({
-  thought: z.any().optional(),
-  trashTalk: z.any().optional(),
-  target: z.any().optional(),
-  campaignPlan: z.any().optional(),
-  nextTurnPlan: z.any().optional(),
+  thought: z.any().optional().describe("Public tactical summary in 1-3 concise sentences. Put tactical reasoning here, not in visible chat."),
+  trashTalk: z.any().optional().describe(VISIBLE_CHAT_DESCRIPTION),
+  target: z.any().optional().describe("Current intended target or null. This may mention the enemy and tactical reason; it is not the visible spoken taunt."),
+  campaignPlan: z.any().optional().describe("Memory note for this worm's broader plan. Tactical content belongs here, not in visible chat."),
+  nextTurnPlan: z.any().optional().describe("Memory note for what this worm should reassess next turn. Tactical content belongs here, not in visible chat."),
+  clipSignal: z.any().optional(),
   actions: z.array(RawActionSchema).min(1).max(20)
 });
 
+function rawAgentDecisionSchemaForLanguage(language?: string): typeof RawAgentDecisionSchema {
+  return RawAgentDecisionSchema.extend({
+    thought: z.any().optional().describe(`Public tactical summary in 1-3 concise sentences. Put tactical reasoning here, not in visible chat. Visible chat language is ${language || "English"}.`),
+    trashTalk: z.any().optional().describe(visibleChatDescription(language)),
+    target: z.any().optional().describe("Current intended target or null. This may mention the enemy and tactical reason; it is not the visible spoken taunt."),
+    campaignPlan: z.any().optional().describe("Memory note for this worm's broader plan. Tactical content belongs here, not in visible chat."),
+    nextTurnPlan: z.any().optional().describe("Memory note for what this worm should reassess next turn. Tactical content belongs here, not in visible chat.")
+  }) as typeof RawAgentDecisionSchema;
+}
+
 const AgentDecisionSchema = z.object({
-  thought: z.string().describe("Public tactical plan. Do not include hidden chain-of-thought."),
-  trashTalk: z.string().max(300),
+  thought: z.string().describe("Public tactical plan. Do not include hidden chain-of-thought. Do not use this field as spoken trash talk."),
+  trashTalk: z.string().max(300).describe(VISIBLE_CHAT_DESCRIPTION),
   target: z.string().max(120).nullable().default(null),
   campaignPlan: z.string().max(800).default("No explicit multi-turn campaign plan supplied; infer from thought and current position."),
   nextTurnPlan: z.string().max(500).default("Next turn should reassess current state, inventory, feedback, and memory before choosing primitives."),
+  clipSignal: ClipSignalSchema.optional(),
   modelUsed: z.string().optional(),
   actions: z.array(ActionSchema).min(1).max(10)
 });
@@ -132,10 +170,20 @@ Win the match using only low-level player intent primitives. You may batch sever
 <turn_loop>
 Everything you need is already in this prompt: full world state, your personal memory and grudges, inventory, spatial-orientation and aim-clearance data, and the engine feedback from your last actions. There are no separate read/inspection tools to call before deciding; reason about what is in front of you.
 Respond in two steps, in this order:
-1. First output exactly ONE short line of in-character spoken chat (your taunt or remark), as plain visible text, in the requested chat language, ending the line with a newline. Nothing else in the plain text - no analysis, no JSON, just that single line.
+1. First output exactly ONE short line of in-character spoken chat (your taunt or remark), as plain visible text, in the requested chat language, ending the line with a newline. Follow <visible_chat_cheatsheet>. Nothing else in the plain text - no analysis, no JSON, just that single line.
 2. Then immediately call submit_worms_turn exactly once with your full action batch.
 Keep your public 'thought' concise (1-3 sentences). Do the detailed math and reasoning silently; do not narrate it.
 </turn_loop>
+
+<visible_chat_cheatsheet>
+Applies to the first plain-text line and \`trashTalk\`.
+- Language: use exactly the language named in <requested_chat_language> from the turn prompt. If that tag says Russian, write Russian; do not switch to English, transliteration, or bilingual output.
+- Purpose: trash talk / roast / comedic jab only. This is spectator speech from the worm, not a tactical scratchpad.
+- Separation: put tactical summaries in \`thought\`, target choice in \`target\`, longer intent in \`campaignPlan\` / \`nextTurnPlan\`, and mechanics in \`actions\`.
+- Never put coordinates, dx/dy, pixel distances, angles, power values, weapon formulas, line-of-sight math, action names, JSON, Markdown, or route instructions in visible chat.
+- Keep it to one punchy in-character sentence, preferably under 160 characters. If you cannot make it clever, make it simple but still in the requested language.
+- Set \`trashTalk\` to the same line you spoke first, or a very close final polish of that line. Do not make one field a joke and the other a plan.
+</visible_chat_cheatsheet>
 
 <anti_cheat_rules>
 - No ballistic solver, trajectory helper, move_to, pathfinding, or autopilot.
@@ -222,6 +270,7 @@ Read movement feedback such as dx/dy, fuel, rope attached/no anchor, and new pos
 
 <final_output>
 Call submit_worms_turn once with target, campaignPlan, nextTurnPlan, and 1-10 primitive actions. Action objects may omit irrelevant fields; the engine will normalize missing fields to null.
+You MAY optionally add a cosmetic clipSignal object (clipWorthy boolean, intent short string, mood one of calm/active/tense/climax/comedic/somber, dramaTags up to 8 short strings) describing how dramatic this turn is for the spectator highlight reel and what soundtrack mood fits. It is purely for the video/music layer and must never change your target, aim, power, weapon, or actions. Omit it if unsure.
 </final_output>`;
 
 let modelListPromise: Promise<Array<{ id: string; created?: number }>> | null = null;
@@ -364,6 +413,15 @@ function normalizeAction(input: z.infer<typeof RawActionSchema>, request?: Agent
   });
 }
 
+// Cosmetic clip metadata only: drop a malformed value rather than fail the turn.
+function normalizeClipSignal(value: unknown): z.infer<typeof ClipSignalSchema> | undefined {
+  if (value == null) {
+    return undefined;
+  }
+  const result = ClipSignalSchema.safeParse(value);
+  return result.success ? result.data : undefined;
+}
+
 function normalizeDecision(decision: unknown, request?: AgentTurnRequest): AgentDecision {
   const parsed = RawAgentDecisionSchema.parse(decision);
   const actions = parsed.actions.slice(0, 10).map((agentAction) => normalizeAction(agentAction, request));
@@ -378,6 +436,7 @@ function normalizeDecision(decision: unknown, request?: AgentTurnRequest): Agent
     target: parsed.target == null ? null : cleanVisibleText(String(parsed.target), 120),
     campaignPlan: parsed.campaignPlan == null ? "No explicit multi-turn campaign plan supplied; infer from thought and current position." : cleanVisibleText(String(parsed.campaignPlan), 800),
     nextTurnPlan: parsed.nextTurnPlan == null ? "Next turn should reassess current state, inventory, feedback, and memory before choosing primitives." : cleanVisibleText(String(parsed.nextTurnPlan), 500),
+    clipSignal: normalizeClipSignal(parsed.clipSignal),
     actions
   });
 }
@@ -418,6 +477,12 @@ function mockDecision(request: AgentTurnRequest): AgentDecision {
     target: "nearest visible enemy",
     campaignPlan: "Mock agent keeps a simple pressure plan: move or shoot toward the nearest visible enemy without using a solver.",
     nextTurnPlan: "Read the next snapshot and continue pressure from the resulting position.",
+    clipSignal: {
+      clipWorthy: true,
+      intent: "pressure the nearest visible enemy",
+      mood: (["active", "tense", "climax"] as const)[request.turnId % 3],
+      dramaTags: ["mock"]
+    },
     modelUsed: "mock",
     actions: [
       action("inspect_inventory", { ms: 250 }),
@@ -758,12 +823,15 @@ function buildMemoryText(request: AgentTurnRequest): string {
 }
 
 function buildPromptText(request: AgentTurnRequest): string {
+  const chatLanguage = request.chatLanguage || "English";
   return [
     `Team: ${request.teamName}`,
     `Active worm agent id: ${request.wormId || `${request.teamIndex}:${request.wormName || "unknown"}`}`,
     `Active worm name: ${request.wormName || "unknown"}`,
     `Team personality fallback: ${request.personality}`,
-    `Chat language for your visible trash talk: ${request.chatLanguage || "English"}. Use only this language; no translations or bilingual duplicates.`,
+    `<requested_chat_language>${chatLanguage}</requested_chat_language>`,
+    `Chat language for your visible trash talk: ${chatLanguage}. Use only ${chatLanguage} in the first spoken line and in the trashTalk field; no translations, bilingual duplicates, or English fallback unless ${chatLanguage} is English.`,
+    `Visible chat fields that must use ${chatLanguage}: the first plain-text spoken line before submit_worms_turn, and the submit_worms_turn.trashTalk argument.`,
     `Same physical worm-turn batch: ${request.sameTurnBatch || 1}.`,
     request.turnTimeRemainingMs != null ? `Physical worm-turn time remaining: ${Math.max(0, Math.round(request.turnTimeRemainingMs / 1000))} seconds.` : "",
     "The agent has no voluntary end-turn/pass tool. The game ends this worm turn through shot resolution, death, water, mine/physics turn change, or timer expiration.",
@@ -827,6 +895,7 @@ function createArenaTools(request: AgentTurnRequest, onSubmit: (decision: AgentD
   // delivered in the prompt (see buildPromptText), so the agent needs no read tools. Removing
   // the redundant read tools collapses the per-turn model round-trips from 2-3 down to 1,
   // cutting latency without losing any information the model had before.
+  const chatLanguage = request.chatLanguage || "English";
   return [
     tool(
       async (input) => {
@@ -836,8 +905,8 @@ function createArenaTools(request: AgentTurnRequest, onSubmit: (decision: AgentD
       },
       {
         name: "submit_worms_turn",
-        description: "Submit the final low-level Worms turn decision as a batch of primitive actions. All world state, memory, inventory, spatial risk, and last-turn engine feedback are already in the prompt; call this exactly once after reasoning about them.",
-        schema: RawAgentDecisionSchema,
+        description: `Submit the final low-level Worms turn decision as a batch of primitive actions. All world state, memory, inventory, spatial risk, and last-turn engine feedback are already in the prompt; call this exactly once after reasoning about them. The trashTalk argument must follow the same visible-chat cheatsheet as the first plain-text line: the requested language is ${chatLanguage}; write trashTalk in ${chatLanguage} only; roast/comedic jab only; no tactical scratchpad or pixel/aim/power math.`,
+        schema: rawAgentDecisionSchemaForLanguage(chatLanguage),
         returnDirect: true
       }
     )

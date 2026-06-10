@@ -78,10 +78,22 @@ class Target extends PhysicsSprite
         this.direction = this.worm.direction;
         this.targetDirection = Utilies.angleToVector(radians);
 
+        // Snap to the static aim sprite BEFORE computing the frame. While the worm is still playing
+        // the (slow) take-out animation, that sprite has fewer frames - so the aim frame would be
+        // clamped to the wrong range - and Sprite.update keeps advancing it, so the held weapon sweeps
+        // on its own and points wherever the animation is instead of at the crosshair. Switching to the
+        // aim sheet, setting the frame, and freezing (finished=true) makes the weapon follow the aim.
+        var aimSprite = this.worm.team.getWeaponManager().getCurrentWeapon().takeAimAnimations;
+        if (aimSprite && this.worm.spriteDef != aimSprite)
+        {
+            this.worm.setSpriteDef(aimSprite);
+        }
+
         var verticalAngle = Utilies.toDegrees(Math.asin(Math.max(-1, Math.min(1, this.targetDirection.y))));
         var frame = Math.max(0, Math.min(this.worm.getTotalFrames() - 1, 16 - (verticalAngle / 6)));
         this.previousSpriteFrame = frame;
         this.worm.setCurrentFrame(frame);
+        this.worm.finished = true;
     }
 
     changeDirection(dir)

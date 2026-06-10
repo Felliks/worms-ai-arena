@@ -11,7 +11,89 @@ class GameMap
 
     getNextSpawnPoint()
     {
-        return Utilies.pickUnqine(this.mapDef.spawnPionts, "spanwPionts");
+        var raw = Utilies.pickUnqine(this.mapDef.spawnPionts, "spanwPionts");
+        // Pool-exhaustion guard (pickUnqine drains the array and returns undefined when empty).
+        if (!raw && typeof GameInstance != "undefined" && GameInstance.terrain)
+        {
+            raw = { x: GameInstance.terrain.getWidth() / 2, y: GameMap.SKY_TOP };
+        }
+        return this.validateSpawn(raw);
+    }
+
+    // ---- spawn validation -----------------------------------------------------
+    // Every worm on every map spawns through here. Spawn coords are buffer-canvas
+    // pixels == body.position * worldScale, so they can be tested directly against
+    // the terrain bitmap. We snap each worm to a real top surface with open sky above
+    // (so it is always reachable on foot AND escapable by jetpack), nudging x when the
+    // authored column is roofed/sealed. The hardcoded spawnPionts arrays are untouched.
+
+    static WORM_BODY_PX = 46;    // ~2 * worm collision radius - headroom for the body
+    static OPEN_SKY_RUN = 150;   // px of continuous air above a surface that counts as "open sky"
+    static SKY_TOP = 50;         // y to start sky-drops from (near the top of the world)
+
+    static terrainAlpha(x, y)
+    {
+        if (typeof GameInstance == "undefined" || !GameInstance.terrain || !GameInstance.terrain.bufferCanvasContext) { return 0; }
+        var t = GameInstance.terrain;
+        if (x < 0 || y < 0 || x >= t.bufferCanvas.width || y >= t.bufferCanvas.height) { return 0; }
+        try { return t.bufferCanvasContext.getImageData(Math.round(x), Math.round(y), 1, 1).data[3]; }
+        catch (e) { return 0; }
+    }
+    static isSolidAt(x, y) { return GameMap.terrainAlpha(x, y) > 16; }
+
+    // First solid y at/below startY in column x; null if the column is open to the bottom.
+    static surfaceBelow(x, startY)
+    {
+        if (typeof GameInstance == "undefined" || !GameInstance.terrain) { return null; }
+        var h = GameInstance.terrain.getHeight();
+        for (var y = Math.max(0, Math.round(startY)); y < h; y += 4)
+        {
+            if (GameMap.isSolidAt(x, y)) { return y; }
+        }
+        return null;
+    }
+
+    // True when there is a continuous open-air run directly above a surface (jetpack escape).
+    static hasOpenHeadroom(x, surfaceY)
+    {
+        var run = 0;
+        for (var y = surfaceY - GameMap.WORM_BODY_PX; y >= 0; y -= 4)
+        {
+            if (GameMap.isSolidAt(x, y)) { return false; } // a ceiling before clearing the pocket
+            run += 4;
+            if (run >= GameMap.OPEN_SKY_RUN) { return true; }
+        }
+        return true; // reached the top of the world == open sky
+    }
+
+    validateSpawn(p)
+    {
+        if (!p) { p = { x: 3000, y: GameMap.SKY_TOP }; }
+        if (typeof GameInstance == "undefined" || !GameInstance.terrain) { return p; } // degrade gracefully
+
+        var t = GameInstance.terrain;
+        var waterY = t.getWaterLine() - GameMap.WORM_BODY_PX;
+        var minX = 40, maxX = t.getWidth() - 40;
+
+        // Try the authored x first, then nudge outward both ways to escape a roofed column.
+        var candidates = [p.x];
+        for (var d = 70; d <= 700; d += 70) { candidates.push(p.x + d); candidates.push(p.x - d); }
+
+        for (var i = 0; i < candidates.length; i++)
+        {
+            var x = Math.max(minX, Math.min(maxX, candidates[i]));
+            var surface = GameMap.surfaceBelow(x, GameMap.SKY_TOP);
+            if (surface == null || surface >= waterY) { continue; }     // no land, or in the sea
+            if (!GameMap.hasOpenHeadroom(x, surface)) { continue; }      // roofed / sealed pocket
+            return { x: x, y: surface - GameMap.WORM_BODY_PX };          // drop in onto the surface
+        }
+
+        // Fallback: clamp the original and lift it straight up to the first open sky.
+        var fx = Math.max(minX, Math.min(maxX, p.x));
+        var fy = Math.min(p.y, waterY);
+        var guard = 0;
+        while (fy > GameMap.SKY_TOP && GameMap.isSolidAt(fx, fy) && guard++ < 2000) { fy -= 4; }
+        return { x: fx, y: fy };
     }
 
     getBackgroundCss()

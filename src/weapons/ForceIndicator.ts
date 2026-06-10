@@ -99,6 +99,10 @@ class ForceIndicator
     setForcePercentage(forcePercentage)
     {
         this.forcePercentage = Math.max(1, Math.min(100, forcePercentage));
+        // Advance the meter blob frame proportionally as well. The human charge() path moves the
+        // frame via setCurrentFrame; without this the LLM/arena set_power path left the blob texture
+        // stuck at frame 0 even though the bar length was correct.
+        this.sprite.setCurrentFrame((this.forcePercentage / 100) * (this.sprite.getTotalFrames() - 1));
         this.needReRender = true;
     }
 

@@ -57,6 +57,14 @@ class WormAnimationManger
 
     setIdleAnimation()
     {
+        // While a hitscan weapon (Shotgun/Minigun) is actively firing it drives the worm's muzzle/pump
+        // pose; don't let the idle animation stomp it back to the aim sprite mid-burst.
+        var heldWeapon = this.worm.team.getWeaponManager().getCurrentWeapon();
+        if (heldWeapon instanceof RayWeapon && heldWeapon.getIsActive())
+        {
+            return;
+        }
+
         // If this worm is the worm of the current player and its not in a dieing state
         if (this.worm.isActiveWorm() && this.worm.spriteDef != Sprites.worms.die)
         {
@@ -98,6 +106,19 @@ class WormAnimationManger
             WormAnimationManger.playerAttentionSemaphore == 0 &&
             this.worm.spriteDef != Sprites.worms.die )
         {
+            // Release any active non-throwable/projectile weapon the dying worm still holds before
+            // the death animation. A Drill locks the worm sprite (so the die sprite + onAnimationFinish
+            // below would silently no-op, orphaning the attention semaphore), and a Shotgun/Minigun
+            // would keep isActive == true forever - either way the turn/match deadlocks. Throwable and
+            // projectile weapons are left alone: Worm.update() keeps driving an orphaned grenade/rocket
+            // until it detonates.
+            var dyingWeapon = this.worm.team.getWeaponManager().getCurrentWeapon();
+            if (dyingWeapon && dyingWeapon.getIsActive()
+                && (dyingWeapon instanceof ThrowableWeapon || dyingWeapon instanceof ProjectileWeapon) == false)
+            {
+                dyingWeapon.deactivate();
+            }
+
             WormAnimationManger.playerAttentionSemaphore++;
 
             GameInstance.camera.panToPosition(Physics.vectorMetersToPixels(this.worm.body.GetPosition()));
@@ -179,15 +200,21 @@ class WormAnimationManger
         }
 
 
-        // Animation states to do with jumping
-        if (this.worm.canJump == 0 && this.worm.body.GetLinearVelocity().y > 0)
+        // Animation states to do with jumping. Only treat the worm as airborne when it has a
+        // MEANINGFUL vertical speed. A worm resting on unstable terrain (e.g. a vine) never settles
+        // to exactly 0 vy, and with canJump == 0 it would otherwise flip between the fall and jump
+        // poses every frame - jerking a held weapon (e.g. the bazooka) up and down. A real jump
+        // peaks around 5 m/s and a free fall passes this threshold within ~0.2s, so this keeps the
+        // genuine jump/fall animations while ignoring tiny settling jitter.
+        var AIRBORNE_VY = 2.0;
+        if (this.worm.canJump == 0 && this.worm.body.GetLinearVelocity().y > AIRBORNE_VY)
         {
             this.worm.setSpriteDef(Sprites.worms.falling);
             this.currentState = WormAnimationManger.WORM_STATE.failing;
             this.idleTimer.reset();
 
         }
-        else if (this.worm.canJump == 0 && this.worm.body.GetLinearVelocity().y < 0)
+        else if (this.worm.canJump == 0 && this.worm.body.GetLinearVelocity().y < -AIRBORNE_VY)
             {
             this.worm.setSpriteDef(Sprites.worms.jumpBegin);
             this.currentState = WormAnimationManger.WORM_STATE.jumping;

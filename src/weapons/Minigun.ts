@@ -53,6 +53,13 @@ class Minigun extends RayWeapon
         //Setup a timer, to stop the weapon firing after so many secounds
         setTimeout(() => {
 
+                // If the owner already died and the death sequence deactivated the weapon, do not
+                // re-pose the corpse or fire a spurious next turn.
+                if (this.getIsActive() == false)
+                {
+                    return;
+                }
+
                 //Once finished firing, deactive weapon and singal next turn
                 this.setIsActive(false);
                 GameInstance.state.tiggerNextTurn();

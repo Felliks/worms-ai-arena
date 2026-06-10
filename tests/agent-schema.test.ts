@@ -190,6 +190,49 @@ describe("agent decision normalization", () => {
       observeMs: 7000
     });
   });
+
+  it("keeps clipSignal as optional cosmetic metadata without changing actions", () => {
+    const normalized = normalizeDecision({
+      thought: "Shoot normally.",
+      trashTalk: "This is for the reel, not the aim.",
+      target: "nearest enemy",
+      clipSignal: {
+        clipWorthy: true,
+        intent: "big finish",
+        mood: "climax",
+        dramaTags: ["mock", "finale"]
+      },
+      actions: [
+        { tool: "aim", degrees: -35 },
+        { tool: "set_power", percent: 70 },
+        { tool: "fire", observeMs: 7000 }
+      ]
+    });
+
+    expect(normalized.clipSignal).toEqual({
+      clipWorthy: true,
+      intent: "big finish",
+      mood: "climax",
+      dramaTags: ["mock", "finale"]
+    });
+    expect(normalized.actions).toMatchObject([
+      { tool: "aim", degrees: -35 },
+      { tool: "set_power", percent: 70 },
+      { tool: "fire", observeMs: 7000 }
+    ]);
+  });
+
+  it("drops malformed clipSignal metadata instead of rejecting an otherwise valid turn", () => {
+    const normalized = normalizeDecision({
+      thought: "Keep playing.",
+      trashTalk: "Bad metadata should not waste my turn.",
+      clipSignal: { mood: "auto-win" },
+      actions: [{ tool: "wait", ms: 500 }]
+    });
+
+    expect(normalized.clipSignal).toBeUndefined();
+    expect(normalized.actions).toMatchObject([{ tool: "wait", ms: 500 }]);
+  });
 });
 
 describe("proxy prompt contract", () => {
@@ -298,7 +341,8 @@ describe("createAgent turn context", () => {
     expect(prompt).toContain("self-hit with Bazooka");
     expect(prompt).toContain("caused an explosion 95 px from you");
     expect(prompt).toContain("Ada Lovelace");
-    expect(prompt).toContain("Use only this language; no translations or bilingual duplicates");
+    expect(prompt).toContain("<requested_chat_language>Russian</requested_chat_language>");
+    expect(prompt).toContain("Use only Russian in the first spoken line and in the trashTalk field");
   });
 
   it("turns ally damage history into an explicit grudge ledger and drama cues", () => {
@@ -503,5 +547,25 @@ describe("createAgent turn context", () => {
     expect(submitted.actions).toMatchObject([
       { tool: "walk", direction: "right", steps: 60 }
     ]);
+  });
+
+  it("describes visible trash talk as a language-locked roast, not a tactical scratchpad", () => {
+    const tools = createArenaTools(request, () => {});
+    const submitTool = tools.find((agentTool: any) => agentTool.name === "submit_worms_turn") as any;
+    const prompt = buildPromptText(request);
+
+    expect(PINNED_AGENT_PROMPT).toContain("<visible_chat_cheatsheet>");
+    expect(PINNED_AGENT_PROMPT).toContain("<requested_chat_language>");
+    expect(PINNED_AGENT_PROMPT).toContain("first plain-text line and `trashTalk`");
+    expect(PINNED_AGENT_PROMPT).toContain("trash talk / roast / comedic jab only");
+    expect(PINNED_AGENT_PROMPT).toContain("Never put coordinates, dx/dy, pixel distances, angles, power values");
+    expect(PINNED_AGENT_PROMPT).not.toContain("<example>");
+    expect(PINNED_AGENT_PROMPT).not.toContain("<examples>");
+    expect(prompt).toContain("Chat language for your visible trash talk: Russian");
+    expect(prompt).toContain("<requested_chat_language>Russian</requested_chat_language>");
+    expect(prompt).toContain("Visible chat fields that must use Russian");
+    expect(submitTool.description).toContain("trashTalk");
+    expect(submitTool.description).toContain("Russian");
+    expect(submitTool.description).toContain("same visible-chat cheatsheet");
   });
 });

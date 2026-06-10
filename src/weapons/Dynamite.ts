@@ -59,6 +59,14 @@ class Dynamite extends ThrowableWeapon
         if (this.getIsActive())
         {
             this.sprite.update();
+            // The dynamite sheet's last few frames are a foreign star/ball sprite (a leftover from the
+            // source art). Keep the burning-stick animation within the real frames so a longer fuse or
+            // faster frame rate can never morph the stick into the wrong sprite right before it blows.
+            var lastRealFrame = this.sprite.getTotalFrames() - 5;
+            if (this.sprite.getCurrentFrame() > lastRealFrame)
+            {
+                this.sprite.setCurrentFrame(lastRealFrame);
+            }
             AssetManager.getSound("fuse").play(1);
             super.update();
         }

@@ -68,7 +68,9 @@ class JetPack extends BaseWeapon
             if (this.forceDir.y != 0)
             {
                 var pos = Physics.vectorMetersToPixels(this.worm.body.GetPosition());
-                pos.x -= (this.bottomflame.getImage().width / 2) + this.worm.direction * 10;
+                // Center the downward plume under the worm. The old `+ direction * 10` bias shoved it
+                // ~10px to one side and made it jump ~20px sideways every time the worm changed facing.
+                pos.x -= (this.bottomflame.getImage().width / 2);
                 pos.y -= 4;
                 this.bottomflame.draw(ctx, pos.x, pos.y);
             }

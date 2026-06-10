@@ -4,6 +4,18 @@ import { describe, expect, it } from "vitest";
 
 const root = path.resolve(__dirname, "..");
 
+function walkFiles(dir: string, out: string[] = []): string[] {
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      walkFiles(full, out);
+    } else {
+      out.push(full);
+    }
+  }
+  return out;
+}
+
 describe("browser game source contracts", () => {
   it("describes every inventory item with tactical use and low-level primitives for agents", () => {
     const snapshot = fs.readFileSync(path.join(root, "src", "llm", "ArenaSnapshot.ts"), "utf8");
@@ -252,5 +264,148 @@ describe("browser game source contracts", () => {
 
     expect(browserQa).toContain("#arenaThoughtBubble");
     expect(browserQa).not.toContain("#arenaAgentOverlay");
+  });
+
+  it("browser QA uses headless Chrome channel with autoplay and sandbox flags", () => {
+    const browserQa = fs.readFileSync(path.join(root, "scripts", "browser-qa.ts"), "utf8");
+
+    expect(browserQa).toContain('channel: "chrome"');
+    expect(browserQa).toContain('headless: true');
+    expect(browserQa).toContain("--autoplay-policy=no-user-gesture-required");
+    expect(browserQa).toContain("--no-sandbox");
+  });
+
+  it("resets video capture session state when a new arena match starts after an ended match", () => {
+    const capture = fs.readFileSync(path.join(root, "src", "video", "VideoCapture.ts"), "utf8");
+
+    expect(capture).toContain("resetCaptureState()");
+    expect(capture).toContain('phase == "ended" && matchActive() && isArenaMatch()');
+    expect(capture).toContain("lastMusicReqAt = -1000000");
+    expect(capture).toContain("musicVariation = -1");
+  });
+
+  it("revokes VideoStudio preview object URLs when replacing previews or closing the studio", () => {
+    const studio = fs.readFileSync(path.join(root, "src", "gui", "VideoStudio.ts"), "utf8");
+
+    expect(studio).toContain("previewUrl");
+    expect(studio).toContain("revokePreviewUrl()");
+    expect(studio).toContain("URL.revokeObjectURL(previewUrl)");
+    expect(studio).toContain("revokePreviewUrl();\n        if (rootEl");
+    expect(studio).toContain("revokePreviewUrl();\n        clear(previewEl)");
+  });
+
+  it("ducks live ArenaMusic while VideoStudio preview audio is active", () => {
+    const studio = fs.readFileSync(path.join(root, "src", "gui", "VideoStudio.ts"), "utf8");
+    const music = fs.readFileSync(path.join(root, "src", "audio", "ArenaMusic.ts"), "utf8");
+
+    expect(music).toContain("setPreviewDucked");
+    expect(music).toContain("previewDucked");
+    expect(music).toContain("targetMasterLevel()");
+    expect(studio).toContain("ArenaMusic.setPreviewDucked(true)");
+    expect(studio).toContain("ArenaMusic.setPreviewDucked(false)");
+  });
+
+  it("ducks all live game SFX while VideoStudio preview audio is active", () => {
+    const studio = fs.readFileSync(path.join(root, "src", "gui", "VideoStudio.ts"), "utf8");
+    const sound = fs.readFileSync(path.join(root, "src", "audio", "Sound.ts"), "utf8");
+
+    expect(sound).toContain("setSfxDucked");
+    expect(sound).toContain("sfxDucked");
+    expect(sound).toContain("activeGains");
+    expect(sound).toContain("SoundFallback.instances");
+    expect(studio).toContain("Sound.setSfxDucked(true)");
+    expect(studio).toContain("Sound.setSfxDucked(false)");
+  });
+
+  it("preserves taunt preroll segments when AI montage reorders moments", () => {
+    const studio = fs.readFileSync(path.join(root, "src", "gui", "VideoStudio.ts"), "utf8");
+    const timeline = fs.readFileSync(path.join(root, "src", "video", "MatchTimeline.ts"), "utf8");
+
+    expect(timeline).toContain("export function segmentsForMoment");
+    expect(timeline).toContain("taunt:");
+    expect(studio).toContain("MatchTimeline.segmentsForMoment");
+    expect(studio).not.toContain("segs.push({ t0: Math.max(0, m.t0 / 1000), t1: m.t1 / 1000");
+  });
+
+  it("draws rendered trash-talk bubbles from segment-local taunt metadata", () => {
+    const recorder = fs.readFileSync(path.join(root, "src", "video", "MatchRecorder.ts"), "utf8");
+
+    expect(recorder).toContain("function drawSegmentTaunt");
+    expect(recorder).toContain("seg.taunt");
+    expect(recorder).toContain("drawFrame(seg)");
+    expect(recorder).toContain("tauntLocalStartMs");
+  });
+
+  it("renders trash-talk bubbles with the same screen-space metadata and style as the in-game wa-bubble", () => {
+    const recorder = fs.readFileSync(path.join(root, "src", "video", "MatchRecorder.ts"), "utf8");
+    const timeline = fs.readFileSync(path.join(root, "src", "video", "MatchTimeline.ts"), "utf8");
+    const css = fs.readFileSync(path.join(root, "css", "custom.css"), "utf8");
+
+    expect(css).toContain(".wa-bubble");
+    expect(timeline).toContain("screenX");
+    expect(timeline).toContain("screenY");
+    expect(timeline).toContain("teamColor");
+    expect(recorder).toContain("screenX");
+    expect(recorder).toContain("screenY");
+    expect(recorder).toContain("teamColor");
+    expect(recorder).toContain("rgba(14, 15, 22, 0.92)");
+    expect(recorder).toContain("drawWormBubble(octx, ow, oh, seg.taunt");
+    expect(recorder).not.toContain("rgba(250,244,214,0.97)");
+  });
+
+  it("cleans MediaRecorder capture tracks after live recording and local render sessions", () => {
+    const recorder = fs.readFileSync(path.join(root, "src", "video", "MatchRecorder.ts"), "utf8");
+
+    expect(recorder).toContain("recordVideoTrack");
+    expect(recorder).toContain("stopLiveTracks()");
+    expect(recorder).toContain("renderTracks");
+    expect(recorder).toContain("renderTracks[i].stop()");
+  });
+
+  it("routes MatchRecorder.render through one terminal callback path", () => {
+    const recorder = fs.readFileSync(path.join(root, "src", "video", "MatchRecorder.ts"), "utf8");
+
+    expect(recorder).toContain("finishRender");
+    expect(recorder).toContain("failRender");
+    expect(recorder).toContain("stopping");
+    expect(recorder).toContain("video.onerror = function () { failRender(); }");
+    expect(recorder).not.toContain("video.onerror = function () { cleanup(); cb(null); };");
+  });
+
+  it("normalizes render EDL segments against decoded master duration before starting playback", () => {
+    const recorder = fs.readFileSync(path.join(root, "src", "video", "MatchRecorder.ts"), "utf8");
+
+    expect(recorder).toContain("normalizeSegments");
+    expect(recorder).toContain("segmentsStartAfterTimeline");
+    expect(recorder).toContain("durationSec");
+    expect(recorder).toContain("fallbackDurationSec");
+    expect(recorder).toContain("if (!segs.length) { failRender(); return; }");
+  });
+
+  it("guards render segment startup against duplicate seeked and fallback timer paths", () => {
+    const recorder = fs.readFileSync(path.join(root, "src", "video", "MatchRecorder.ts"), "utf8");
+
+    expect(recorder).toContain("segmentStarted");
+    expect(recorder).toContain("startSegment");
+    expect(recorder).not.toContain("var onSeeked = function ()");
+  });
+
+  it("keeps clipSignal out of gameplay and agent action execution code", () => {
+    const allowed = new Set([path.join(root, "src", "video", "MatchTimeline.ts")]);
+    const files = walkFiles(path.join(root, "src")).filter((file) => file.endsWith(".ts") && !allowed.has(file));
+
+    for (const file of files) {
+      const text = fs.readFileSync(file, "utf8");
+      expect(text.includes("clipSignal"), path.relative(root, file)).toBe(false);
+    }
+  });
+
+  it("drains pending SFX audio elements after the shared capture context resumes", () => {
+    const bus = fs.readFileSync(path.join(root, "src", "video", "RecordingAudioBus.ts"), "utf8");
+
+    expect(bus).toContain("flushPending()");
+    expect(bus).toContain("p.then(function () { flushPending(); })");
+    expect(bus).toContain("if (pending.length)");
+    expect(bus).toContain("for (var i = 0; i < list.length; i++) { wrap(list[i]); }");
   });
 });

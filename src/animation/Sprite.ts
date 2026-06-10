@@ -124,11 +124,15 @@ class Sprite
 
     setCurrentFrame(frame)
     {
-        if (frame >= 0 && frame < this.spriteDef.frameCount)
-        {
-             this.currentFrameY = frame;
-        }
-
+        // Ignore NON-FINITE writes (undefined/NaN) - draw() skips when currentFrameY is
+        // NaN, so writing one makes the sprite VANISH while its name/health still draw
+        // (e.g. an active worm whose target.previousSpriteFrame is undefined). Keeping the
+        // current frame preserves visibility. Valid numbers are clamped into range rather
+        // than dropped, so an out-of-range index shows the nearest real frame.
+        var f = Number(frame);
+        if (!isFinite(f)) { return; }
+        var max = this.spriteDef.frameCount - 1;
+        this.currentFrameY = f < 0 ? 0 : (f > max ? max : f);
     }
 
     setNoLoop(val: bool)
