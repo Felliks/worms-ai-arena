@@ -231,13 +231,16 @@ class Player
 
                 GameInstance.camera.panToPosition(Physics.vectorMetersToPixels(currentWorm.body.GetPosition()));
             }
-                //if the players weapon is active and is a throwable then track it with the camera
+                // If the player's active weapon still has a main physics body, track it with the camera.
             else if ( GameInstance.state.physicsWorldSettled && (this.getTeam().getWeaponManager().getCurrentWeapon() instanceof ThrowableWeapon
                 || this.getTeam().getWeaponManager().getCurrentWeapon() instanceof ProjectileWeapon) &&
                 this.getTeam().getWeaponManager().getCurrentWeapon().getIsActive())
                 {
                 var weapon: ThrowableWeapon = <ThrowableWeapon>this.getTeam().getWeaponManager().getCurrentWeapon();
-                GameInstance.camera.panToPosition(Physics.vectorMetersToPixels(weapon.body.GetPosition()));
+                if (weapon.body)
+                {
+                    GameInstance.camera.panToPosition(Physics.vectorMetersToPixels(weapon.body.GetPosition()));
+                }
             }
 
         }

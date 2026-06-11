@@ -218,6 +218,21 @@ This is a comedy ROAST BATTLE between caricatures of real AI-industry figures. L
 - Keep it to one punchy line. Land the joke, then act.
 </roast_style>
 
+<showmanship_and_variety>
+The match should be fun to watch, not a spreadsheet turret simulator. Winning still matters, but style points matter when several moves are plausible.
+- Do not choose Shotgun just because it avoids power math. Shotgun is useful, but repeated hitscan is low-prestige unless it is lethal, defensive, or the only clean lane.
+- Before selecting Shotgun, Minigun, Uzi, or Handgun, briefly compare at least two plausible alternatives from the current inventory: arced explosives, Banana/Cluster/Mortar chaos, melee/shove tools, Blowtorch/Drill terrain plays, Teleport repositioning, or Jet Pack/Rope setup.
+- Try to change weapon families across personal turns when survival does not clearly forbid it. A stylish miss, chaotic banana split, funny Prod shove, risky Teleport angle, or cringe overconfident mortar is often better spectator fuel than the fifth identical Shotgun line.
+- Good failures are allowed. Obviously meaningless self-harm or ally splash is still bad, but brave experiments, near misses, betrayal drama, and comedy self-owns can be memorable.
+- Visible speech should sell the stunt: swagger, corporate cringe, fake benchmark flexing, GPU cult nonsense, wounded pride, or petty revenge in the requested language.
+<examples>
+Do not copy these examples; use them only as decision-shape guidance.
+<example>Point-blank enemy, recent memory already used Shotgun: consider Baseball Bat, Prod, Fire Punch, Dragon Ball, Uzi, or Handgun first. Use Shotgun only if those are blocked, out of ammo, or clearly worse.</example>
+<example>Enemy cluster behind terrain: consider Banana Bomb, Cluster Bomb, Mortar, Bazooka crater, Drill/Blowtorch setup, or Teleport to a ridiculous perch. Do not instantly downgrade to Shotgun because the math is easier.</example>
+<example>No clean shot and water is rising: a Teleport, Jet Pack, Rope, Drill, or Blowtorch reposition can be the cool play. Record the stunt in campaignPlan/nextTurnPlan so the worm remembers it.</example>
+</examples>
+</showmanship_and_variety>
+
 <coordinate_cheatsheet>
 Canvas coordinates: x increases right, y increases downward.
 Aim angles: -90 = straight up, 0 = right, 90 = down, 180/-180 = left.
@@ -480,28 +495,46 @@ function mockDecision(request: AgentTurnRequest): AgentDecision {
   const even = request.teamIndex % 2 === 0;
   const baseAngle = even ? -135 : -45;
   const wiggle = ((request.turnId * 17) % 30) - 15;
-  const weapon = request.turnId % 3 === 0 ? "Hand Grenade" : "Bazooka";
+  const spectacleWeapons = [
+    "Bazooka",
+    "Hand Grenade",
+    "Banana Bomb",
+    "Cluster Bomb",
+    "Mortar",
+    "Uzi",
+    "Handgun"
+  ];
+  const weapon = spectacleWeapons[request.turnId % spectacleWeapons.length];
+  const rayWeapon = /^(Uzi|Handgun)$/.test(weapon);
   const russian = /ru|russian|рус/i.test(request.chatLanguage || "");
+  const weaponActions = rayWeapon
+    ? [
+        action("aim", { degrees: baseAngle + wiggle }),
+        action("fire", { observeMs: 2400 })
+      ]
+    : [
+        action("aim", { degrees: baseAngle + wiggle }),
+        action("set_power", { percent: 62 }),
+        action("fire", { observeMs: weapon === "Banana Bomb" ? 9000 : 7000 })
+      ];
 
   return {
-    thought: `MOCK AGENT: ${request.wormName || request.teamName} uses personal memory and tries a ${weapon} shot without a ballistic helper.`,
-    trashTalk: russian ? "Память включена, уверенность необоснованная." : "Memory online. Confidence unjustified.",
+    thought: `MOCK AGENT: ${request.wormName || request.teamName} rotates the arsenal and tries ${weapon} without a ballistic helper.`,
+    trashTalk: russian ? "Память включена, шоу сомнительное." : "Memory online. The stunt budget is irresponsible.",
     target: "nearest visible enemy",
-    campaignPlan: "Mock agent keeps a simple pressure plan: move or shoot toward the nearest visible enemy without using a solver.",
-    nextTurnPlan: "Read the next snapshot and continue pressure from the resulting position.",
+    campaignPlan: "Mock agent keeps pressure while rotating weapons so demo matches do not collapse into one safe shot pattern.",
+    nextTurnPlan: "Read the next snapshot and keep rotating the arsenal unless the current position demands survival.",
     clipSignal: {
       clipWorthy: true,
-      intent: "pressure the nearest visible enemy",
-      mood: (["active", "tense", "climax"] as const)[request.turnId % 3],
-      dramaTags: ["mock"]
+      intent: `mock ${weapon} stunt`,
+      mood: (["active", "tense", "climax", "comedic"] as const)[request.turnId % 4],
+      dramaTags: ["mock", "weapon variety"]
     },
     modelUsed: "mock",
     actions: [
       action("inspect_inventory", { ms: 250 }),
       action("select_weapon", { weapon }),
-      action("aim", { degrees: baseAngle + wiggle }),
-      action("set_power", { percent: 62 }),
-      action("fire", { observeMs: 7000 })
+      ...weaponActions
     ]
   };
 }
@@ -775,6 +808,102 @@ function buildFireDisciplineText(): string {
   ].join("\n");
 }
 
+const KNOWN_WEAPON_NAMES = [
+  "Shotgun",
+  "Hand Grenade",
+  "Holy Grenade",
+  "Banana Bomb",
+  "Cluster Bomb",
+  "Dynamite",
+  "Jet Pack",
+  "Teleport",
+  "Minigun",
+  "Uzi",
+  "Handgun",
+  "Ninja Rope",
+  "Drill",
+  "Blowtorch",
+  "Baseball Bat",
+  "Prod",
+  "Fire Punch",
+  "Dragon Ball",
+  "Bazooka",
+  "Mortar"
+];
+
+function normalizeWeaponChoice(value: string): string | null {
+  const cleaned = value
+    .replace(/[`"'{}[\]]/g, " ")
+    .replace(/\bwith\b.*$/i, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!cleaned) {
+    return null;
+  }
+
+  const exact = KNOWN_WEAPON_NAMES.find((name) => name.toLowerCase() === cleaned.toLowerCase());
+  if (exact) {
+    return exact;
+  }
+
+  if (/^grenade$/i.test(cleaned)) {
+    return "Hand Grenade";
+  }
+  if (/^jetpack$/i.test(cleaned)) {
+    return "Jet Pack";
+  }
+
+  return null;
+}
+
+function extractRecentWeaponChoices(markdown?: string): string[] {
+  const choices: string[] = [];
+  const lines = String(markdown || "")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  for (const line of lines) {
+    const selected = line.match(/select_weapon\s+(.+?)(?=\s*->|\s*\.|\s*,|$)/i);
+    const fired = line.match(/Fire requested with\s+`?([^.`\n]+?)`?\./i);
+    const chosen = normalizeWeaponChoice(selected?.[1] || fired?.[1] || "");
+    if (chosen) {
+      choices.push(chosen);
+    }
+  }
+
+  return choices.slice(-6);
+}
+
+function buildWeaponVarietyText(request: AgentTurnRequest): string {
+  const recentWeapons = extractRecentWeaponChoices(request.wormMemoryMarkdown);
+  const recentText = recentWeapons.length > 0 ? recentWeapons.join(", ") : "none detected for this worm yet";
+  const shotgunCount = recentWeapons.filter((weapon) => weapon === "Shotgun").length;
+  const recentRayCount = recentWeapons.filter((weapon) => /^(Shotgun|Minigun|Uzi|Handgun)$/.test(weapon)).length;
+
+  const lines = [
+    "## Weapon variety and spectacle brief",
+    "- style points matter when several moves are plausible: try to win while looking dangerous, funny, spiteful, or overconfident.",
+    "- Recent weapon choices: " + recentText + ".",
+    "- Do not choose Shotgun just because it avoids power math. If Shotgun is still the correct choice, say the concrete reason in thought/campaignPlan: lethal finish, only clear lane, self-preservation, or no plausible alternative.",
+    "- Before a ray weapon, consider at least two other current-inventory families: arced explosive, cluster/banana/mortar, melee/shove, terrain cutter, Teleport/mobility setup.",
+    "- Try a different weapon family every 2-3 personal turns when the map gives you a survivable excuse.",
+    "- Good failures are allowed: stylish misses, chaotic fragments, overconfident melee attempts, and cringe stunts can be fun. Do not take obviously meaningless self-damage or ally splash just for variety."
+  ];
+
+  if (shotgunCount >= 2) {
+    lines.push("- Repeated Shotgun detected: another Shotgun is stale unless it is clearly lethal, defensive, or the only usable clean line.");
+  } else if (recentRayCount >= 3) {
+    lines.push("- Repeated ray-weapon pattern detected: look harder for an explosive, terrain, mobility, or melee play before using another ray.");
+  } else {
+    lines.push("- No repeated Shotgun streak detected, but still avoid treating hitscan as the prestige default.");
+  }
+
+  lines.push("- This is a preference layer, not an autopilot. No `move_to`, route solver, autopilot, guaranteed escape, or guaranteed shot.");
+
+  return lines.join("\n");
+}
+
 function buildMobilityPlanText(): string {
   return [
     "## Inventory and primitive cheatsheet",
@@ -871,6 +1000,7 @@ function buildPromptText(request: AgentTurnRequest): string {
       : "",
     request.visionScreenshotPath ? `Debug copy of attached screenshot saved at: ${request.visionScreenshotPath}` : "",
     request.visionError ? `Vision error: ${request.visionError}` : "",
+    buildWeaponVarietyText(request),
     buildFireDisciplineText(),
     buildWaterPressureText(),
     buildLongTermCampaignPlanText(),

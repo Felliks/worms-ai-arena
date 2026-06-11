@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { PNG } from "pngjs";
 import { describe, expect, it } from "vitest";
 
 const root = path.resolve(__dirname, "..");
@@ -12,6 +13,16 @@ function spriteBlock(source: string, spriteName: string): string {
   const match = source.match(new RegExp(`${spriteName}: \\{([\\s\\S]*?)\\n\\s*\\},`));
   expect(match, `missing sprite definition ${spriteName}`).toBeTruthy();
   return match![1];
+}
+
+function pngHasTransparentPixels(relativePath: string): boolean {
+  const png = PNG.sync.read(fs.readFileSync(path.join(root, relativePath)));
+  for (let i = 3; i < png.data.length; i += 4) {
+    if (png.data[i] === 0) {
+      return true;
+    }
+  }
+  return false;
 }
 
 describe("gameplay source contracts", () => {
@@ -209,6 +220,41 @@ describe("gameplay source contracts", () => {
     // The constant tumble and the canvas rotation are both gone.
     expect(projectile).not.toContain("SetAngularVelocity(0.7)");
     expect(projectile).not.toContain("ctx.rotate(this.body.GetAngle())");
+  });
+
+  it("does not crash camera tracking after fragmenting weapons destroy their main body", () => {
+    const player = readSource("src/Player.ts");
+    const weaponCameraBlock = player.slice(player.lastIndexOf("else if", player.indexOf("weapon.body")), player.indexOf("this.team.update()"));
+
+    expect(weaponCameraBlock).toContain("if (weapon.body)");
+    expect(weaponCameraBlock).toContain("weapon.body.GetPosition()");
+  });
+
+  it("keeps newly imported weapon sheets transparent instead of drawing matte backgrounds", () => {
+    for (const image of [
+      "data/images/banana.png",
+      "data/images/cluster.png",
+      "data/images/mortar.png",
+      "data/images/clustlet.png",
+      "data/images/hclustlt.png",
+      "data/images/wuzi.png",
+      "data/images/wuzif.png",
+      "data/images/wuzilnk.png",
+      "data/images/whandg.png",
+      "data/images/whandf.png",
+      "data/images/wprod.png",
+      "data/images/wbatfrd.png",
+      "data/images/wfist.png",
+      "data/images/wfirbl1.png",
+      "data/images/wblowlk.png",
+      "data/images/wbloww.png",
+      "data/images/wtellnk.png",
+      "data/images/wtelbak.png",
+      "data/images/wteldsv.png",
+      "data/images/magichit.png"
+    ]) {
+      expect(pngHasTransparentPixels(image), `${image} should have transparent background pixels`).toBe(true);
+    }
   });
 
   it("only plays the worm fall/jump animation above a real airborne speed, so a held weapon does not jitter on unstable terrain", () => {

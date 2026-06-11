@@ -310,6 +310,16 @@ describe("browser game source contracts", () => {
     expect(css).toContain("box-sizing: border-box");
   });
 
+  it("quotes expanded weapon menu attributes so multi-word weapon names stay intact", () => {
+    const weaponsMenu = fs.readFileSync(path.join(root, "src", "gui", "WeaponsMenu.ts"), "utf8");
+
+    expect(weaponsMenu).toContain('value=\\"" + currentWeapon.name + "\\"');
+    expect(weaponsMenu).toContain('title=\\"" + currentWeapon.name + "\\"');
+    expect(weaponsMenu).toContain('alt=\\"" + currentWeapon.name + "\\"');
+    expect(weaponsMenu).not.toContain("value=\" + currentWeapon.name");
+    expect(weaponsMenu).not.toContain("title= \" + currentWeapon.name");
+  });
+
   it("shows agents current height above water and future rising-water pressure", () => {
     const snapshot = fs.readFileSync(path.join(root, "src", "llm", "ArenaSnapshot.ts"), "utf8");
 

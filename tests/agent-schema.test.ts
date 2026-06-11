@@ -8,6 +8,7 @@ import {
   buildOpenAIInitialMessages,
   buildPromptText,
   createArenaTools,
+  decideTurn,
   normalizeDecision
 } from "../server/agent";
 
@@ -253,6 +254,35 @@ describe("agent decision normalization", () => {
     expect(normalized.clipSignal).toBeUndefined();
     expect(normalized.actions).toMatchObject([{ tool: "wait", ms: 500 }]);
   });
+});
+
+describe("mock agent variety", () => {
+  it("rotates through the expanded arsenal instead of only grenade and bazooka", async () => {
+    const weapons: string[] = [];
+
+    for (let turnId = 1; turnId <= 8; turnId++) {
+      const decision = await decideTurn({
+        matchId: "mock-variety",
+        turnId,
+        teamIndex: turnId % 2,
+        teamName: "Mock Team",
+        personality: "chaos comedian",
+        chatLanguage: "English",
+        model: "mock",
+        perception: "text",
+        snapshotMarkdown: "# Worms arena state\n\n## Current combat situation\n\n- Active worm: mock."
+      });
+      const selected = decision.actions.find((action) => action.tool === "select_weapon")?.weapon;
+      if (selected) {
+        weapons.push(selected);
+      }
+    }
+
+    expect(new Set(weapons).size).toBeGreaterThan(4);
+    expect(weapons).toContain("Banana Bomb");
+    expect(weapons).toContain("Cluster Bomb");
+    expect(weapons).toContain("Mortar");
+  }, 15000);
 });
 
 describe("proxy prompt contract", () => {
@@ -565,6 +595,28 @@ describe("createAgent turn context", () => {
     expect(prompt).toContain("unsafe after 22 more rises");
   });
 
+  it("pushes agents toward varied show-off weapon choices without adding a solver", () => {
+    const prompt = buildPromptText({
+      ...request,
+      wormMemoryMarkdown: [
+        "### Recent personal turns",
+        "- Turn 3: I chose: select_weapon Shotgun -> aim deg -152 -> fire. Feedback: Fire requested with Shotgun.",
+        "- Turn 5: I chose: select_weapon Shotgun -> aim deg 92 -> fire. Feedback: Fire requested with Shotgun.",
+        "- Turn 7: I chose: select_weapon Bazooka -> aim deg -40 -> set_power power 62 -> fire. Feedback: Fire requested with Bazooka."
+      ].join("\n")
+    });
+
+    expect(PINNED_AGENT_PROMPT).toContain("<showmanship_and_variety>");
+    expect(PINNED_AGENT_PROMPT).toContain("Do not choose Shotgun just because it avoids power math");
+    expect(PINNED_AGENT_PROMPT).toContain("<examples>");
+    expect(prompt).toContain("## Weapon variety and spectacle brief");
+    expect(prompt).toContain("Recent weapon choices: Shotgun, Shotgun, Bazooka");
+    expect(prompt).toContain("Repeated Shotgun detected");
+    expect(prompt).toContain("style points matter when several moves are plausible");
+    expect(prompt).toContain("Good failures are allowed");
+    expect(prompt).toContain("No `move_to`, route solver, autopilot, guaranteed escape, or guaranteed shot");
+  });
+
   it("cleans leaked tool wrapper suffixes from visible chat without rejecting the decision", async () => {
     let submitted: any = null;
     const tools = createArenaTools(request, (decision) => {
@@ -617,8 +669,8 @@ describe("createAgent turn context", () => {
     expect(PINNED_AGENT_PROMPT).toContain("first plain-text line and `trashTalk`");
     expect(PINNED_AGENT_PROMPT).toContain("trash talk / roast / comedic jab only");
     expect(PINNED_AGENT_PROMPT).toContain("Never put coordinates, dx/dy, pixel distances, angles, power values");
-    expect(PINNED_AGENT_PROMPT).not.toContain("<example>");
-    expect(PINNED_AGENT_PROMPT).not.toContain("<examples>");
+    expect(PINNED_AGENT_PROMPT).toContain("<examples>");
+    expect(PINNED_AGENT_PROMPT).toContain("Do not copy these examples");
     expect(prompt).toContain("Chat language for your visible trash talk: Russian");
     expect(prompt).toContain("<requested_chat_language>Russian</requested_chat_language>");
     expect(prompt).toContain("Visible chat fields that must use Russian");
