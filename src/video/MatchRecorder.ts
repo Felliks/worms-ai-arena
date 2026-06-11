@@ -112,6 +112,40 @@ module MatchRecorder
 
     // Fit the live game canvas into the compose canvas (letterboxed) + watermark.
     // Safe to call when not recording (no-op without a context).
+    // Bake the live trash-talk bubble straight into the master, tracking the worm's CURRENT
+    // screen position this frame. The old approach drew the bubble at EXPORT using the screen
+    // coords captured once at decision time, so once the live camera panned to follow the thrown
+    // grenade the bubble stayed at the stale screen spot and appeared stuck on the projectile.
+    // composeFrame runs every frame with live game state, so reading the worm's live position
+    // here makes the bubble follow the worm exactly like the in-game DOM overlay does.
+    function drawLiveBubble(ctx, src, dx, dy, s)
+    {
+        try
+        {
+            if (typeof ArenaControllerInstance == "undefined" || !ArenaControllerInstance) { return; }
+            var ac: any = ArenaControllerInstance;
+            var el = ac.bubbleEl;
+            if (!el || !el.style || el.style.display == "none") { return; }
+            var worm = ac.bubbleWorm;
+            if (!worm || !worm.body || worm.isDead) { return; }
+            if (typeof GameInstance == "undefined" || !GameInstance.camera) { return; }
+            // Exactly mirror ArenaController.positionBubble: worm world pos minus camera = #action px.
+            var px = Physics.vectorMetersToPixels(worm.body.GetPosition().Copy());
+            var sx = px.x - GameInstance.camera.getX();
+            var sy = px.y - GameInstance.camera.getY();
+            // Use the text actually revealed in the DOM bubble so the typewriter feel is preserved.
+            var textEl = el.querySelector ? el.querySelector(".wa-bubble-text") : null;
+            var shown = textEl ? String(textEl.textContent || "") : String(ac.bubbleTargetText || "");
+            if (!shown) { return; }
+            var teamColor = (worm.team && worm.team.color) ? worm.team.color : "#ffffff";
+            var taunt = { screenX: sx, screenY: sy, teamColor: teamColor };
+            // No canvasW/H on the taunt: position maps through frameMap {dx,dy,s} (the compose
+            // fit), and the bubble is drawn at scale s so it matches the scaled-down game.
+            drawWormBubble(ctx, W, H, taunt, shown, { dx: dx, dy: dy, s: s });
+        }
+        catch (e) { }
+    }
+
     export function composeFrame()
     {
         if (!cctx) { return; }
@@ -128,10 +162,10 @@ module MatchRecorder
             var dx = Math.round((W - dw) / 2);
             dy = Math.round((H - dh) / 2);
             try { cctx.drawImage(src, 0, 0, src.width, src.height, dx, dy, dw, dh); } catch (e) { }
+            // Bake the worm-following trash-talk bubble into the master at the live position.
+            drawLiveBubble(cctx, src, dx, dy, s);
         }
-        // The master is otherwise CLEAN (overlays are added at render time so they sit
-        // correctly in the target aspect); only a subtle watermark is baked here so even
-        // a raw quick-share clip carries it.
+        // A subtle watermark so even a raw quick-share clip carries it.
         drawWatermark(cctx, W, H);
     }
 
@@ -710,8 +744,8 @@ module MatchRecorder
     }
 
     // Re-render the 16:9 master into the chosen platform aspect, optionally cutting
-    // to EDL segments (each {t0,t1 in seconds, rate}). Used by the VideoStudio for
-    // platform-formatted highlight reels / sped-up full matches. All local.
+    // to EDL segments (each {t0,t1 in seconds}). Used by the VideoStudio for
+    // platform-formatted highlight reels. All local.
     // cb(blob|null); progress(0..1) optional.
     export function render(opts, cb, progress)
     {
@@ -746,7 +780,7 @@ module MatchRecorder
                 t1 = Math.min(t1, durationSec);
             }
             if (t1 <= t0 + 0.03) { continue; }
-            out.push({ t0: t0, t1: t1, rate: seg.rate || defaultRate || 1, taunt: seg.taunt || null });
+            out.push({ t0: t0, t1: t1, rate: 1, taunt: seg.taunt || null });
         }
         return out;
     }
@@ -873,9 +907,10 @@ module MatchRecorder
                         ? MatchTimeline.tauntWindowMs(seg.taunt.text)
                         : Math.min(5400, Math.max(2600, Math.round(String(seg.taunt.text).length / 24 * 1000) + 1700));
                     if (elapsed > windowMs) { return false; }
-                    var reveal = Math.max(0, Math.floor(elapsed / 1000 * 24));
-                    var shown = String(seg.taunt.text).slice(0, reveal);
-                    if (shown.length > 0) { drawWormBubble(octx, ow, oh, seg.taunt, shown, frameMap); }
+                    var text = String(seg.taunt.text || "");
+                    var revealMs = Math.max(900, Math.min(1900, text.length * 36));
+                    var shownChars = elapsed >= revealMs ? text.length : Math.max(1, Math.ceil(text.length * elapsed / revealMs));
+                    drawWormBubble(octx, ow, oh, seg.taunt, text.slice(0, shownChars), frameMap);
                     return true;
                 }
                 catch (e) { return false; }
@@ -895,21 +930,9 @@ module MatchRecorder
                 // The worm's trash-talk: a Worms-style thought bubble matching the
                 // in-game .wa-bubble style and screen-space placement. It streams in,
                 // holds to read, then disappears so the action plays cleanly.
-                try
-                {
-                    if (!drawSegmentTaunt(seg, frameMap) && typeof MatchTimeline != "undefined" && MatchTimeline.getTauntAt)
-                    {
-                        var tMs = Math.round(video.currentTime * 1000);
-                        var taunt = MatchTimeline.getTauntAt(tMs);
-                        if (taunt && taunt.text)
-                        {
-                            var elapsed = tMs - taunt.t;
-                            var reveal = Math.max(0, Math.floor(elapsed / 1000 * 24));
-                            var shown = String(taunt.text).slice(0, reveal);
-                            if (shown.length > 0) { drawWormBubble(octx, ow, oh, taunt, shown, frameMap); }
-                        }
-                    }
-                }
+                // Segment-local taunt metadata is redrawn here so clipped moments include
+                // readable trash-talk even after the live thinking bubble vanished.
+                try { drawSegmentTaunt(seg, frameMap); }
                 catch (e) { }
             }
 
@@ -941,7 +964,7 @@ module MatchRecorder
                 if (finished) { return; }
                 if (i >= segs.length) { finalize(); return; }
                 var seg = segs[i];
-                video.playbackRate = Math.max(0.25, Math.min(16, seg.rate || 1));
+                video.playbackRate = 1;
                 if (progress) { try { progress(i / segs.length); } catch (e) { } }
 
                 var segmentStarted = false;

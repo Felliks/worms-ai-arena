@@ -142,6 +142,26 @@ describe("agent decision schema", () => {
     expect(parsed.success).toBe(true);
   });
 
+  it("accepts teleport coordinates as a turn-ending utility primitive", () => {
+    const normalized = normalizeDecision({
+      thought: "The water is close, so relocate to a dry shelf.",
+      trashTalk: "Я исчезаю ровно настолько, чтобы вы промахнулись.",
+      target: "high dry ground",
+      campaignPlan: "Use Teleport to escape rising water pressure without asking for a route solver.",
+      nextTurnPlan: "Reassess water clearance and nearest enemy from the new shelf.",
+      actions: [
+        { tool: "select_weapon", weapon: "Teleport" },
+        { tool: "teleport", x: 3720, y: 1095 }
+      ]
+    });
+
+    expect(AgentDecisionSchema.safeParse(normalized).success).toBe(true);
+    expect(normalized.actions).toMatchObject([
+      { tool: "select_weapon", weapon: "Teleport" },
+      { tool: "teleport", x: 3720, y: 1095 }
+    ]);
+  });
+
   it("accepts explicit multi-turn campaign plans and longer purposeful walks", () => {
     const normalized = normalizeDecision({
       thought: "No sane shot; I need to keep closing distance.",
@@ -494,6 +514,7 @@ describe("createAgent turn context", () => {
         { tool: "aim", degrees: "-240" },
         { tool: "set_power", percent: "140" },
         { tool: "fire", observeMs: 12000 },
+        { tool: "teleport", x: -500, y: 50000 },
         { tool: "dance", ms: 1 }
       ]
     });
@@ -503,8 +524,45 @@ describe("createAgent turn context", () => {
       { tool: "aim", degrees: -179 },
       { tool: "set_power", percent: 100 },
       { tool: "fire", observeMs: 9000 },
+      { tool: "teleport", x: 0, y: 10000 },
       { tool: "wait", ms: 100 }
     ]);
+  });
+
+  it("describes teleport as coordinate-selected, validated, and turn-ending on success", () => {
+    const prompt = buildPromptText(request);
+
+    expect(PINNED_AGENT_PROMPT).toContain("teleport");
+    expect(PINNED_AGENT_PROMPT).toContain("Teleport success ends the worm turn");
+    expect(PINNED_AGENT_PROMPT).toContain("Teleport rejection returns engine feedback");
+    expect(prompt).toContain("teleport(x,y)");
+    expect(prompt).toContain("invalid teleport coordinates return feedback");
+    expect(prompt).toContain("without consuming Teleport ammo");
+  });
+
+  it("surfaces current and future water pressure in the prompt", () => {
+    const prompt = buildPromptText({
+      ...request,
+      snapshotMarkdown: [
+        "# Worms arena state",
+        "",
+        "## Water and sudden-death pressure",
+        "",
+        "- Physical turn serial: 23.",
+        "- Current water line: y 1765. Active worm y 1510, 255 px above water.",
+        "- Rising water: enabled, starts on turn 20, automatic rise amount 12 px at each new physical turn.",
+        "- Next rise: turn 24, water line will become y 1753.",
+        "- SELF `Grace Hopper`: 255 px above water; unsafe after 22 more rises if position does not improve."
+      ].join("\n")
+    });
+
+    expect(prompt).toContain("## Water pressure reading");
+    expect(prompt).toContain("water clearance");
+    expect(prompt).toContain("automatic rise amount");
+    expect(prompt).toContain("next water rise");
+    expect(prompt).toContain("## Water and sudden-death pressure");
+    expect(prompt).toContain("255 px above water");
+    expect(prompt).toContain("unsafe after 22 more rises");
   });
 
   it("cleans leaked tool wrapper suffixes from visible chat without rejecting the decision", async () => {

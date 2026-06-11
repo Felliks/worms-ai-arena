@@ -123,6 +123,10 @@ class GameStateManager
             }
 
             this.physicalTurnSerial++;
+            if (GameInstance && GameInstance.terrain && GameInstance.terrain.updateWaterRiseForTurn)
+            {
+                GameInstance.terrain.updateWaterRiseForTurn(this.physicalTurnSerial);
+            }
             this.getCurrentPlayer().getTeam().nextWorm();
             GameInstance.camera.cancelPan();
             GameInstance.camera.panToPosition(Physics.vectorMetersToPixels(this.getCurrentPlayer().getTeam().getCurrentWorm().body.GetPosition()));

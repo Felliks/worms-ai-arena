@@ -203,6 +203,268 @@ class ProjectileWeapon extends BaseWeapon
 
 }
 
+class FragmentingProjectileWeapon extends ProjectileWeapon
+{
+    fragmentSpriteDef: SpriteDefinition;
+    fragmentCount: number;
+    fragmentFuseMs: number;
+    fragmentSpeed: number;
+    fragmentExplosionRadius: number;
+    fragmentEffectedRadius;
+    fragmentExplosiveForce: number;
+    fragmentMaxDamage: number;
+    fragments;
+    turnTriggered: bool;
+
+    constructor(name : string, ammo : number, iconSpriteDef, weaponSpriteDef: SpriteDefinition, fragmentSpriteDef: SpriteDefinition, takeOutAnimation: SpriteDefinition, takeAimAnimation: SpriteDefinition)
+    {
+        super(name, ammo, iconSpriteDef, weaponSpriteDef, takeOutAnimation, takeAimAnimation);
+
+        this.fragmentSpriteDef = fragmentSpriteDef;
+        this.fragmentCount = 6;
+        this.fragmentFuseMs = 1400;
+        this.fragmentSpeed = 12;
+        this.fragmentExplosionRadius = 32;
+        this.fragmentEffectedRadius = Physics.pixelToMeters(85);
+        this.fragmentExplosiveForce = 42;
+        this.fragmentMaxDamage = 20;
+        this.fragments = [];
+        this.turnTriggered = false;
+    }
+
+    activate(worm: Worm)
+    {
+        this.turnTriggered = false;
+        this.fragments = [];
+        super.activate(worm);
+    }
+
+    deactivate()
+    {
+        this.cleanupFragments();
+        super.deactivate();
+    }
+
+    cleanupFragments()
+    {
+        if (!this.fragments)
+        {
+            return;
+        }
+        for (var i = this.fragments.length - 1; i >= 0; i--)
+        {
+            this.removeFragment(i);
+        }
+    }
+
+    beginContact(contact)
+    {
+        if (this.fragments && this.fragments.length > 0)
+        {
+            var index = this.findFragmentIndexForContact(contact);
+            if (index >= 0)
+            {
+                this.fragments[index].detonate = true;
+            }
+            return;
+        }
+
+        if (this.isActive && this.isLive)
+        {
+            var origin = this.body.GetPosition().Copy();
+            var inheritedVelocity = this.body.GetLinearVelocity().Copy();
+            Effects.explosion(
+                origin,
+                this.explosionRadius,
+                this.effectedRadius,
+                this.explosiveForce,
+                this.maxDamage,
+                this.worm
+            );
+            this.spawnFragments(origin, inheritedVelocity);
+            this.isLive = false;
+        }
+    }
+
+    spawnFragments(origin, inheritedVelocity)
+    {
+        var first = -165;
+        var step = this.fragmentCount > 1 ? 150 / (this.fragmentCount - 1) : 0;
+        for (var i = 0; i < this.fragmentCount; i++)
+        {
+            var deg = first + (step * i);
+            var rad = deg * Math.PI / 180;
+            var velocity = new b2Vec2(
+                Math.cos(rad) * this.fragmentSpeed + inheritedVelocity.x * 0.20,
+                Math.sin(rad) * this.fragmentSpeed + inheritedVelocity.y * 0.10
+            );
+            this.fragments.push(this.createFragment(origin.Copy(), velocity));
+        }
+    }
+
+    createFragment(origin, velocity)
+    {
+        var sprite = new Sprite(this.fragmentSpriteDef);
+        var image = sprite.getImage();
+
+        var fixDef = new b2FixtureDef;
+        fixDef.density = 45.0;
+        fixDef.friction = 3.0;
+        fixDef.restitution = 0.45;
+        fixDef.shape = new b2CircleShape((image.width / 5) / Physics.worldScale);
+
+        var bodyDef = new b2BodyDef;
+        bodyDef.type = b2Body.b2_dynamicBody;
+        bodyDef.position = origin;
+        bodyDef.angle = Utilies.vectorToAngle(velocity);
+
+        var fixture = Physics.world.CreateBody(bodyDef).CreateFixture(fixDef);
+        var body = fixture.GetBody();
+        body.SetLinearVelocity(velocity);
+        body.SetUserData(this);
+        Physics.addToFastAcessList(body);
+
+        return {
+            body: body,
+            sprite: sprite,
+            timer: new Timer(this.fragmentFuseMs),
+            detonate: false
+        };
+    }
+
+    findFragmentIndexForContact(contact)
+    {
+        var a = contact.GetFixtureA().GetBody();
+        var b = contact.GetFixtureB().GetBody();
+        for (var i = 0; i < this.fragments.length; i++)
+        {
+            if (this.fragments[i].body == a || this.fragments[i].body == b)
+            {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    removeFragment(index)
+    {
+        var fragment = this.fragments[index];
+        if (fragment && fragment.body)
+        {
+            Physics.removeToFastAcessList(fragment.body);
+            Physics.world.DestroyBody(fragment.body);
+        }
+        Utilies.deleteFromCollection(this.fragments, index);
+    }
+
+    explodeFragment(index)
+    {
+        var fragment = this.fragments[index];
+        if (!fragment || !fragment.body)
+        {
+            this.removeFragment(index);
+            return;
+        }
+
+        Effects.explosion(
+            fragment.body.GetPosition(),
+            this.fragmentExplosionRadius,
+            this.fragmentEffectedRadius,
+            this.fragmentExplosiveForce,
+            this.fragmentMaxDamage,
+            this.worm
+        );
+        this.removeFragment(index);
+    }
+
+    finishIfResolved()
+    {
+        if (this.isActive && !this.turnTriggered && !this.isLive && !this.body && (!this.fragments || this.fragments.length == 0))
+        {
+            this.turnTriggered = true;
+            GameInstance.state.tiggerNextTurn();
+            this.isActive = false;
+        }
+    }
+
+    update()
+    {
+        if (!this.isActive)
+        {
+            return;
+        }
+
+        if (this.isLive && this.body && typeof GameInstance != "undefined" && GameInstance.terrain
+            && Physics.metersToPixels(this.body.GetPosition().y) > GameInstance.terrain.getWaterLine())
+        {
+            this.isLive = false;
+        }
+
+        if (!this.isLive && this.body)
+        {
+            Physics.removeToFastAcessList(this.body);
+            Physics.world.DestroyBody(this.body);
+            this.body = null;
+            this.fixture = null;
+        }
+
+        if (this.fragments && this.fragments.length > 0)
+        {
+            for (var i = this.fragments.length - 1; i >= 0; i--)
+            {
+                var fragment = this.fragments[i];
+                fragment.timer.update();
+                if (fragment.detonate)
+                {
+                    this.explodeFragment(i);
+                } else if (typeof GameInstance != "undefined" && GameInstance.terrain
+                    && Physics.metersToPixels(fragment.body.GetPosition().y) > GameInstance.terrain.getWaterLine())
+                {
+                    this.removeFragment(i);
+                } else if (fragment.timer.hasTimePeriodPassed(false))
+                {
+                    this.explodeFragment(i);
+                }
+            }
+        }
+
+        this.finishIfResolved();
+    }
+
+    drawFragments(ctx)
+    {
+        if (!this.fragments)
+        {
+            return;
+        }
+        for (var i = 0; i < this.fragments.length; i++)
+        {
+            var fragment = this.fragments[i];
+            var sprite = fragment.sprite;
+            var fc = sprite.getTotalFrames();
+            var fr = Math.round(fragment.body.GetAngle() / (2 * Math.PI) * fc);
+            sprite.setCurrentFrame(((fr % fc) + fc) % fc);
+
+            ctx.save();
+            ctx.translate(
+                fragment.body.GetPosition().x * Physics.worldScale,
+                fragment.body.GetPosition().y * Physics.worldScale
+            );
+            sprite.draw(ctx, -sprite.getFrameWidth() / 2, -sprite.getFrameHeight() / 2);
+            ctx.restore();
+        }
+    }
+
+    draw(ctx)
+    {
+        if (this.isActive && this.isLive && this.body)
+        {
+            super.draw(ctx);
+        }
+        this.drawFragments(ctx);
+    }
+}
+
 
 class Bazzoka extends ProjectileWeapon
 {
@@ -217,6 +479,36 @@ class Bazzoka extends ProjectileWeapon
             Sprites.worms.takeOutBazooka,
             Sprites.worms.aimBazooka
             );
+    }
+
+}
+
+class Mortar extends FragmentingProjectileWeapon
+{
+
+    constructor(ammo)
+    {
+        super(
+            "Mortar",
+            ammo,
+            Sprites.weaponIcons.mortar,
+            Sprites.weapons.mortar,
+            Sprites.weapons.clusterlet,
+            Sprites.worms.takeOutBazooka,
+            Sprites.worms.aimBazooka
+            );
+
+        this.explosionRadius = 32;
+        this.effectedRadius = Physics.pixelToMeters(85);
+        this.explosiveForce = 38;
+        this.maxDamage = 20;
+        this.fragmentCount = 6;
+        this.fragmentFuseMs = 1300;
+        this.fragmentSpeed = 12;
+        this.fragmentExplosionRadius = 32;
+        this.fragmentEffectedRadius = Physics.pixelToMeters(85);
+        this.fragmentExplosiveForce = 40;
+        this.fragmentMaxDamage = 20;
     }
 
 }

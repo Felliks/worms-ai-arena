@@ -24,7 +24,7 @@ class WeaponsMenu
         this.cssId = "weaponsMenu";
         this.toggleButtonCssId = "weaponsMenuBtn";
 
-        $('body').append("<div id=" + this.cssId + "><div id=" + this.toggleButtonCssId + ">Weapons Menu</div><div id=content></div></div>");
+        $('body').append("<div id=" + this.cssId + "><div id=" + this.toggleButtonCssId + ">Weapons Menu</div><div id=weaponsMenuContent></div></div>");
 
 
         this.htmlElement = $("#" + this.cssId);
@@ -101,7 +101,7 @@ class WeaponsMenu
             this.isVisable = false;
         } else
         {
-            moveAmountInPx = "-275px";
+            moveAmountInPx = "-" + this.htmlElement.outerWidth() + "px";
             this.isVisable = true;
         }
 

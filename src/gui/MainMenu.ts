@@ -285,10 +285,17 @@ module MainMenu
         var wormStep = stepper(c.wormsPerTeam, 1, maxW, function (v) { c.wormsPerTeam = v; ArenaConfig.save(); });
         var hpInput = el("input", { class: "wa-input", attrs: { type: "number", min: "10", max: "300", value: String(c.wormHealth || 80) }, on: { change: function () { c.wormHealth = Number(hpInput.value) || 80; ArenaConfig.save(); } } });
         var turnInput = el("input", { class: "wa-input", attrs: { type: "number", min: "5", max: "600", value: String(c.turnTimeSec || 45) }, on: { change: function () { c.turnTimeSec = Number(turnInput.value) || 45; ArenaConfig.save(); } } });
+        var waterStartInput = el("input", { class: "wa-input", attrs: { type: "number", min: "0", max: "999", value: String(c.waterRiseStartTurn || 0) }, on: { change: function ()
+        {
+            c.waterRiseStartTurn = Math.max(0, Math.min(999, Math.round(Number(waterStartInput.value) || 0)));
+            c.waterRisePixelsPerTurn = Settings.DEFAULT_WATER_RISE_PIXELS_PER_TURN;
+            ArenaConfig.save();
+        } } });
         p.appendChild(el("div", { class: "wa-row" }, [
             field("Worms per team (max " + maxW + ")", wormStep),
             field("Worm health", hpInput),
-            field("Turn time (seconds)", turnInput)
+            field("Turn time (seconds)", turnInput),
+            field("Water starts rising on turn", waterStartInput, "0 disables rising water. The rise amount is automatic.")
         ]));
 
         p.appendChild(el("div", { class: "wa-section-title", text: "Map" }));
@@ -391,8 +398,13 @@ module MainMenu
         {
             return [
                 { name: "Shotgun", ammo: 99 }, { name: "Grenade", ammo: 20 }, { name: "Holy Grenade", ammo: 2 },
-                { name: "Dynamite", ammo: 5 }, { name: "Jetpack", ammo: 5 }, { name: "Minigun", ammo: 4 },
-                { name: "Ninja Rope", ammo: 50 }, { name: "Drill", ammo: 3 }, { name: "Bazooka", ammo: 15 }
+                { name: "Banana Bomb", ammo: 3 }, { name: "Cluster Bomb", ammo: 6 }, { name: "Dynamite", ammo: 5 },
+                { name: "Jetpack", ammo: 5 }, { name: "Teleport", ammo: 2 }, { name: "Minigun", ammo: 4 },
+                { name: "Uzi", ammo: 6 }, { name: "Handgun", ammo: 6 }, { name: "Ninja Rope", ammo: 50 },
+                { name: "Drill", ammo: 3 }, { name: "Blowtorch", ammo: 3 }, { name: "Baseball Bat", ammo: 4 },
+                { name: "Prod", ammo: 6 }, { name: "Fire Punch", ammo: 3 }, { name: "Dragon Ball", ammo: 3 },
+                { name: "Bazooka", ammo: 15 },
+                { name: "Mortar", ammo: 8 }
             ];
         }
     }

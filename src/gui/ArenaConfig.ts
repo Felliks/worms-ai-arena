@@ -131,6 +131,8 @@ module ArenaConfig
             memoryStrategy: "sliding",
             memoryWindow: 14,
             maxBatchesPerTurn: 4,
+            waterRiseStartTurn: 0,
+            waterRisePixelsPerTurn: Settings.DEFAULT_WATER_RISE_PIXELS_PER_TURN,
             weaponAmmo: null,
             teams: buildDefaultTeams(6)
         };
@@ -536,6 +538,10 @@ module ArenaConfig
         Settings.ARENA_MEMORY_STRATEGY = c.memoryStrategy || "sliding";
         Settings.ARENA_MEMORY_WINDOW = c.memoryWindow || 14;
         Settings.ARENA_MAX_BATCHES_PER_TURN = c.maxBatchesPerTurn || 4;
+        Settings.WATER_RISE_START_TURN = Math.max(0, Math.min(999, Math.round(c.waterRiseStartTurn) || 0));
+        Settings.WATER_RISE_PIXELS_PER_TURN = Settings.WATER_RISE_START_TURN > 0
+            ? Math.max(1, Math.min(200, Math.round(c.waterRisePixelsPerTurn) || Settings.DEFAULT_WATER_RISE_PIXELS_PER_TURN))
+            : 0;
         Settings.PLAYER_TURN_TIME = Math.max(5, c.turnTimeSec || 45) * 1000;
         Settings.SOUND = !!c.sound;
 

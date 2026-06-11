@@ -10,6 +10,7 @@
  */
 ///<reference path="../system/Physics.ts"/>
 ///<reference path="../system/Utilies.ts" />
+///<reference path="../Settings.ts"/>
 ///<reference path="TerrainBoundary.ts"/>
 ///<reference path="Waves.ts"/>
 
@@ -33,6 +34,10 @@ class Terrain
     deformTerrainBatchList = []; 
 
     TERRAIN_RECT_HEIGHT: number;
+    baseWaterLine: number;
+    currentWaterLine: number;
+    waterRiseStartTurn: number;
+    waterRisePixelsPerTurn: number;
 
     constructor (canvas, terrainImage, world, scale)
     {
@@ -66,6 +71,10 @@ class Terrain
         this.bufferCanvasContext.globalCompositeOperation = "destination-out"; // Used for cut out circles
 
         this.wave = new Waves();
+        this.baseWaterLine = this.bufferCanvas.height - 35;
+        this.currentWaterLine = this.baseWaterLine;
+        this.waterRiseStartTurn = 0;
+        this.waterRisePixelsPerTurn = Settings.DEFAULT_WATER_RISE_PIXELS_PER_TURN;
     }
 
     getWidth()
@@ -80,7 +89,22 @@ class Terrain
 
     getWaterLine()
     {
-         return this.bufferCanvas.height - 35;
+         return this.currentWaterLine;
+    }
+
+    updateWaterRiseForTurn(physicalTurnSerial)
+    {
+        this.waterRiseStartTurn = (typeof Settings != "undefined") ? Math.max(0, Math.round(Settings.WATER_RISE_START_TURN || 0)) : 0;
+        this.waterRisePixelsPerTurn = (typeof Settings != "undefined") ? Math.max(0, Math.round(Settings.WATER_RISE_PIXELS_PER_TURN || Settings.DEFAULT_WATER_RISE_PIXELS_PER_TURN)) : 0;
+        if (this.waterRiseStartTurn <= 0 || this.waterRisePixelsPerTurn <= 0 || physicalTurnSerial < this.waterRiseStartTurn)
+        {
+            this.currentWaterLine = this.baseWaterLine;
+            return this.currentWaterLine;
+        }
+
+        var rises = Math.max(0, Math.round(physicalTurnSerial) - this.waterRiseStartTurn + 1);
+        this.currentWaterLine = Math.max(0, this.baseWaterLine - (rises * this.waterRisePixelsPerTurn));
+        return this.currentWaterLine;
     }
 
     // This setup physical bodies from image data 

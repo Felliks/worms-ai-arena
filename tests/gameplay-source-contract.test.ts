@@ -54,10 +54,10 @@ describe("gameplay source contracts", () => {
     expect(rayWeapon).toContain("return this.getIsActive()");
     expect(rayWeapon).not.toContain("this.ammo != 0");
     expect(shotgun).toContain("Physics.shotRayWithFixture");
-    expect(shotgun).toContain("this.worm.getMuzzlePosition()");
+    expect(shotgun).toContain("this.worm.getRayOrigin()");
     expect(shotgun).toContain("hitWorm.hit(this.damgeToWorm, this.worm)");
     expect(minigun).toContain("Physics.shotRayWithFixture");
-    expect(minigun).toContain("this.worm.getMuzzlePosition()");
+    expect(minigun).toContain("this.worm.getRayOrigin()");
     expect(minigun).toContain("hitWorm.hit(this.damgeToWorm, this.worm)");
   });
 
@@ -140,13 +140,38 @@ describe("gameplay source contracts", () => {
     const wormManager = readSource("src/WormManager.ts");
     const throwable = readSource("src/weapons/ThrowableWeapon.ts");
     const projectile = readSource("src/weapons/ProjectileWeapon.ts");
+    const settings = readSource("src/Settings.ts");
 
     expect(terrain).toContain("getWaterLine()");
-    expect(terrain).toContain("return this.bufferCanvas.height - 35");
+    expect(terrain).toContain("baseWaterLine");
+    expect(terrain).toContain("currentWaterLine");
+    expect(terrain).toContain("updateWaterRiseForTurn");
+    expect(terrain).toContain("waterRisePixelsPerTurn");
+    expect(settings).toContain("DEFAULT_WATER_RISE_PIXELS_PER_TURN");
+    expect(terrain).not.toContain("return this.bufferCanvas.height - 35");
     expect(game).toContain("this.terrain.getWaterLine()");
     expect(wormManager).toContain("GameInstance.terrain.getWaterLine()");
     expect(throwable).toContain("GameInstance.terrain.getWaterLine()");
     expect(projectile).toContain("GameInstance.terrain.getWaterLine()");
+  });
+
+  it("applies rising water by physical turn number and exposes settings through menu and URL", () => {
+    const settings = readSource("src/Settings.ts");
+    const arenaConfig = readSource("src/gui/ArenaConfig.ts");
+    const mainMenu = readSource("src/gui/MainMenu.ts");
+    const gameState = readSource("src/GameStateManager.ts");
+
+    expect(settings).toContain("WATER_RISE_START_TURN");
+    expect(settings).toContain("WATER_RISE_PIXELS_PER_TURN");
+    expect(settings).toContain("DEFAULT_WATER_RISE_PIXELS_PER_TURN = 30");
+    expect(settings).toContain("waterRiseStartTurn");
+    expect(arenaConfig).toContain("waterRiseStartTurn");
+    expect(arenaConfig).toContain("DEFAULT_WATER_RISE_PIXELS_PER_TURN");
+    expect(mainMenu).toContain("Water starts rising on turn");
+    expect(mainMenu).toContain("The rise amount is automatic");
+    expect(mainMenu).not.toContain("Rise per turn (px)");
+    expect(mainMenu).not.toContain("waterStepInput");
+    expect(gameState).toContain("updateWaterRiseForTurn(this.physicalTurnSerial)");
   });
 
   it("keeps AI absolute aim, raycast origin, and vision overlay visually synchronized", () => {

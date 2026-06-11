@@ -21,7 +21,7 @@ describe("browser game source contracts", () => {
     const snapshot = fs.readFileSync(path.join(root, "src", "llm", "ArenaSnapshot.ts"), "utf8");
     const controller = fs.readFileSync(path.join(root, "src", "llm", "ArenaController.ts"), "utf8");
 
-    for (const weapon of ["Shotgun", "Hand Grenade", "Holy Grenade", "Dynamite", "Jet Pack", "Minigun", "Ninja Rope", "Drill", "Bazooka"]) {
+    for (const weapon of ["Shotgun", "Hand Grenade", "Holy Grenade", "Dynamite", "Jet Pack", "Minigun", "Ninja Rope", "Drill", "Bazooka", "Teleport"]) {
       expect(snapshot).toContain(weapon);
     }
     expect(snapshot).toContain("tactical use");
@@ -29,12 +29,15 @@ describe("browser game source contracts", () => {
     expect(snapshot).toContain("agent primitives");
     expect(snapshot).toContain("consumes one Jet Pack ammo");
     expect(snapshot).toContain("screen-relative");
+    expect(snapshot).toContain("teleport(x,y)");
+    expect(snapshot).toContain("invalid teleport coordinates return feedback");
     expect(snapshot).not.toContain("best when no sane shot exists");
     expect(snapshot).not.toContain("Use 40-120");
     expect(snapshot).not.toContain("terrain-opening shot for the next turn");
     expect(controller).toContain("weaponUseGuidance");
     expect(controller).toContain("ArenaSnapshot.weaponUseGuidance");
     expect(controller).toContain("Ninja Rope");
+    expect(controller).toContain("attemptTeleport");
   });
 
   it("always writes server event logs and mirrors to console only when opted in", () => {
@@ -129,6 +132,197 @@ describe("browser game source contracts", () => {
     expect(wormManager).toContain("SetLinearVelocity(new b2Vec2(0, 4))");
     expect(gameState).toContain("forceOutOfBoundsDeaths");
     expect(game).toContain("forceOutOfBoundsDeaths");
+  });
+
+  it("exposes teleport as a validated inventory utility that succeeds by ending the turn", () => {
+    const weaponManager = fs.readFileSync(path.join(root, "src", "weapons", "WeaponManager.ts"), "utf8");
+    const teleport = fs.readFileSync(path.join(root, "src", "weapons", "Teleport.ts"), "utf8");
+    const controller = fs.readFileSync(path.join(root, "src", "llm", "ArenaController.ts"), "utf8");
+    const sprites = fs.readFileSync(path.join(root, "src", "animation", "SpriteDefinitions.ts"), "utf8");
+    const mainMenu = fs.readFileSync(path.join(root, "src", "gui", "MainMenu.ts"), "utf8");
+
+    expect(weaponManager).toContain("new Teleport(2)");
+    expect(teleport).toContain("class Teleport extends BaseWeapon");
+    expect(teleport).toContain("validateDestination");
+    expect(teleport).toContain("attemptTeleport");
+    expect(teleport).toContain("does not consume ammo");
+    expect(teleport).toContain("GameInstance.state.tiggerNextTurn()");
+    expect(teleport).toContain("terrain overlap around worm footprint");
+    expect(teleport).toContain("destination is below water line");
+    expect(controller).toContain('if (tool == "teleport")');
+    expect(controller).toContain("this.attemptTeleport(player, worm, action.x, action.y)");
+    expect(controller).toContain("Teleport rejected");
+    expect(controller).toContain("Teleport succeeded");
+    expect(sprites).toContain("iconTeleport");
+    expect(sprites).toContain("takeOutTeleport");
+    expect(sprites).toContain("readyTeleport");
+    expect(mainMenu).toContain('{ name: "Teleport", ammo: 2 }');
+  });
+
+  it("connects low-risk Worms Armageddon weapons through existing aim/power/fire primitives", () => {
+    const readOptional = (relativePath: string) => {
+      const full = path.join(root, relativePath);
+      return fs.existsSync(full) ? fs.readFileSync(full, "utf8") : "";
+    };
+    const weaponManager = fs.readFileSync(path.join(root, "src", "weapons", "WeaponManager.ts"), "utf8");
+    const thrown = readOptional(path.join("src", "weapons", "ArmageddonThrowables.ts"));
+    const projectile = fs.readFileSync(path.join(root, "src", "weapons", "ProjectileWeapon.ts"), "utf8");
+    const sprites = fs.readFileSync(path.join(root, "src", "animation", "SpriteDefinitions.ts"), "utf8");
+    const snapshot = fs.readFileSync(path.join(root, "src", "llm", "ArenaSnapshot.ts"), "utf8");
+    const mainMenu = fs.readFileSync(path.join(root, "src", "gui", "MainMenu.ts"), "utf8");
+    const serverAgent = fs.readFileSync(path.join(root, "server", "agent.ts"), "utf8");
+
+    expect(weaponManager).toContain("new BananaBomb(3)");
+    expect(weaponManager).toContain("new ClusterBomb(6)");
+    expect(weaponManager).toContain("new Mortar(8)");
+    expect(thrown).toContain("class FragmentingThrowableWeapon extends ThrowableWeapon");
+    expect(thrown).toContain("class BananaBomb extends FragmentingThrowableWeapon");
+    expect(thrown).toContain("class ClusterBomb extends FragmentingThrowableWeapon");
+    expect(thrown).toContain("spawnFragments");
+    expect(projectile).toContain("class FragmentingProjectileWeapon extends ProjectileWeapon");
+    expect(projectile).toContain("class Mortar extends FragmentingProjectileWeapon");
+
+    for (const sprite of ["bananaBomb", "clusterBomb", "mortar", "clusterlet", "bananaClusterlet"]) {
+      expect(sprites).toContain(sprite);
+    }
+    for (const asset of [
+      "data/images/banana.png",
+      "data/images/cluster.png",
+      "data/images/mortar.png",
+      "data/images/clustlet.png",
+      "data/images/hclustlt.png",
+      "data/images/weaponicons/iconbanana.png",
+      "data/images/weaponicons/iconcluster.png",
+      "data/images/weaponicons/iconmortar.png",
+    ]) {
+      expect(fs.existsSync(path.join(root, asset))).toBe(true);
+    }
+
+    for (const weapon of ["Banana Bomb", "Cluster Bomb", "Mortar"]) {
+      expect(snapshot).toContain(weapon);
+      expect(mainMenu).toContain(weapon);
+      expect(serverAgent).toContain(weapon);
+    }
+    expect(snapshot).toContain("agent primitives: aim, set_power, fire");
+  });
+
+  it("connects every additional safe Worms Armageddon weapon without new agent primitives", () => {
+    const readOptional = (relativePath: string) => {
+      const full = path.join(root, relativePath);
+      return fs.existsSync(full) ? fs.readFileSync(full, "utf8") : "";
+    };
+    const weaponManager = fs.readFileSync(path.join(root, "src", "weapons", "WeaponManager.ts"), "utf8");
+    const ray = readOptional(path.join("src", "weapons", "ArmageddonRayWeapons.ts"));
+    const melee = readOptional(path.join("src", "weapons", "MeleeWeapons.ts"));
+    const blowtorch = fs.readFileSync(path.join(root, "src", "weapons", "Blowtorch.ts"), "utf8");
+    const sprites = fs.readFileSync(path.join(root, "src", "animation", "SpriteDefinitions.ts"), "utf8");
+    const snapshot = fs.readFileSync(path.join(root, "src", "llm", "ArenaSnapshot.ts"), "utf8");
+    const mainMenu = fs.readFileSync(path.join(root, "src", "gui", "MainMenu.ts"), "utf8");
+    const serverAgent = fs.readFileSync(path.join(root, "server", "agent.ts"), "utf8");
+
+    for (const weapon of [
+      "new Uzi(6)",
+      "new Handgun(6)",
+      "new BaseballBat(4)",
+      "new Prod(6)",
+      "new FirePunch(3)",
+      "new DragonBall(3)",
+      "new Blowtorch(3)",
+    ]) {
+      expect(weaponManager).toContain(weapon);
+    }
+
+    expect(ray).toContain("class Uzi extends TimedRayWeapon");
+    expect(ray).toContain("class Handgun extends TimedRayWeapon");
+    expect(melee).toContain("class BaseballBat extends MeleeWeapon");
+    expect(melee).toContain("class Prod extends MeleeWeapon");
+    expect(melee).toContain("class FirePunch extends MeleeWeapon");
+    expect(melee).toContain("class DragonBall extends MeleeWeapon");
+    expect(blowtorch).toContain("class Blowtorch extends BaseWeapon");
+    expect(blowtorch).toContain("addToDeformBatch");
+
+    for (const sprite of [
+      "uzi",
+      "handgun",
+      "baseballBat",
+      "prod",
+      "firePunch",
+      "dragonBall",
+      "blowTorch",
+    ]) {
+      expect(sprites).toContain(sprite);
+    }
+
+    for (const asset of [
+      "data/images/wuzi.png",
+      "data/images/wuzif.png",
+      "data/images/wuzilnk.png",
+      "data/images/whandg.png",
+      "data/images/whandf.png",
+      "data/images/wprod.png",
+      "data/images/wbatfrd.png",
+      "data/images/wfist.png",
+      "data/images/wfirbl1.png",
+      "data/images/wblowlk.png",
+      "data/images/wbloww.png",
+      "data/images/weaponicons/iconuzi.png",
+      "data/images/weaponicons/iconhandgun.png",
+      "data/images/weaponicons/iconbaseball.png",
+      "data/images/weaponicons/iconprod.png",
+      "data/images/weaponicons/iconfirepnch.png",
+      "data/images/weaponicons/icondragball.png",
+    ]) {
+      expect(fs.existsSync(path.join(root, asset))).toBe(true);
+    }
+
+    for (const weapon of [
+      "Uzi",
+      "Handgun",
+      "Baseball Bat",
+      "Prod",
+      "Fire Punch",
+      "Dragon Ball",
+      "Blowtorch",
+    ]) {
+      expect(snapshot).toContain(weapon);
+      expect(mainMenu).toContain(weapon);
+      expect(serverAgent).toContain(weapon);
+    }
+    expect(snapshot).toContain("No new agent primitive is required");
+  });
+
+  it("keeps the expanded in-game weapons menu scrollable after the larger inventory", () => {
+    const weaponsMenu = fs.readFileSync(path.join(root, "src", "gui", "WeaponsMenu.ts"), "utf8");
+    const css = fs.readFileSync(path.join(root, "css", "custom.css"), "utf8");
+    const menuRule = css.match(/#weaponsMenu\s*\{([\s\S]*?)\}/)?.[1] ?? "";
+
+    expect(weaponsMenu).toContain("weaponsMenuContent");
+    expect(weaponsMenu).toContain("outerWidth()");
+    expect(weaponsMenu).not.toContain('moveAmountInPx = "-275px"');
+    expect(menuRule).toContain("top: 50%");
+    expect(menuRule).toContain("transform: translateY(-50%)");
+    expect(menuRule).not.toContain("bottom:");
+    expect(menuRule).not.toContain("top: auto");
+    expect(css).toContain("#weaponsMenuContent");
+    expect(css).toContain("overflow-y: auto");
+    expect(css).toContain("grid-template-columns");
+    expect(css).toContain("max-height: calc(100vh");
+    expect(css).toContain("box-sizing: border-box");
+  });
+
+  it("shows agents current height above water and future rising-water pressure", () => {
+    const snapshot = fs.readFileSync(path.join(root, "src", "llm", "ArenaSnapshot.ts"), "utf8");
+
+    expect(snapshot).toContain("## Water and sudden-death pressure");
+    expect(snapshot).toContain("Physical turn serial");
+    expect(snapshot).toContain("Current water line");
+    expect(snapshot).toContain("Active worm");
+    expect(snapshot).toContain("px above water");
+    expect(snapshot).toContain("Rising water: enabled");
+    expect(snapshot).toContain("automatic rise amount");
+    expect(snapshot).toContain("Next rise");
+    expect(snapshot).toContain("unsafe after");
+    expect(snapshot).toContain("more rises if position does not improve");
   });
 
   it("keeps a dead worm's airborne grenade/rocket updating so it detonates instead of deadlocking the turn", () => {
@@ -323,8 +517,33 @@ describe("browser game source contracts", () => {
 
     expect(timeline).toContain("export function segmentsForMoment");
     expect(timeline).toContain("taunt:");
+    expect(timeline).toContain("TAUNT_PREROLL_MS");
+    expect(timeline).toContain("localStartMs");
+    expect(timeline).toContain("showThoughtBubble");
     expect(studio).toContain("MatchTimeline.segmentsForMoment");
     expect(studio).not.toContain("segs.push({ t0: Math.max(0, m.t0 / 1000), t1: m.t1 / 1000");
+  });
+
+  it("does not speed up rendered clips because accelerated music and trash-talk are unreadable", () => {
+    const recorder = fs.readFileSync(path.join(root, "src", "video", "MatchRecorder.ts"), "utf8");
+    const timeline = fs.readFileSync(path.join(root, "src", "video", "MatchTimeline.ts"), "utf8");
+
+    expect(recorder).toContain("video.playbackRate = 1");
+    expect(recorder).not.toContain("video.playbackRate = Math.max");
+    expect(timeline).not.toContain("Whole match, sped up");
+    expect(timeline).not.toContain("fullRate");
+  });
+
+  it("keeps the last death and its last trash-talk in generated clips", () => {
+    const capture = fs.readFileSync(path.join(root, "src", "video", "VideoCapture.ts"), "utf8");
+    const timeline = fs.readFileSync(path.join(root, "src", "video", "MatchTimeline.ts"), "utf8");
+
+    expect(capture).toContain("POST_ROLL_MS = 6500");
+    expect(timeline).toContain("finalDeathMomentAdded");
+    expect(timeline).toContain('addMoment("final_death"');
+    expect(timeline).toContain("latestDeathBefore");
+    expect(timeline).toContain("Last Death");
+    expect(timeline).not.toContain("Final death");
   });
 
   it("draws rendered trash-talk bubbles from segment-local taunt metadata", () => {
@@ -334,6 +553,7 @@ describe("browser game source contracts", () => {
     expect(recorder).toContain("seg.taunt");
     expect(recorder).toContain("drawFrame(seg)");
     expect(recorder).toContain("tauntLocalStartMs");
+    expect(recorder).toContain("drawWormBubble(octx, ow, oh, seg.taunt");
   });
 
   it("renders trash-talk bubbles with the same screen-space metadata and style as the in-game wa-bubble", () => {

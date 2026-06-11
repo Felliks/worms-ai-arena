@@ -53,8 +53,10 @@ module MatchTimeline
 
     var installed = false;
     var lastWinnerTeam = -1;
+    var finalDeathMomentAdded = false;
     var deadSeen: any = {};      // wormId -> true (death already emitted)
     var lastTaunt: any = {};     // teamIndex -> {t, wormId, name, text, target, clip}
+    var streamTauntByTurn: any = {};
     var hitMatrix: any = {};     // "attackerId|victimId" -> count (beef)
     var teamLowWater: any = {};  // teamIndex -> true once team dropped below comeback threshold
     var teamHp: any = {};        // teamIndex -> last sampled aggregate HP fraction (0..1)
@@ -65,6 +67,7 @@ module MatchTimeline
     var COMEBACK_LOW = 0.25;     // team HP fraction that counts as "near death"
     var EPIC_DAMAGE = 55;        // single-shot total damage that counts as epic
     var BEEF_MIN = 3;            // repeated hits A->B to call it beef
+    var TAUNT_PREROLL_MS = 900;   // include a little context before the first streamed word
 
     // ---- lifecycle -----------------------------------------------------------
 
@@ -77,8 +80,10 @@ module MatchTimeline
         moments = [];
         momentSeq = 0;
         lastWinnerTeam = -1;
+        finalDeathMomentAdded = false;
         deadSeen = {};
         lastTaunt = {};
+        streamTauntByTurn = {};
         hitMatrix = {};
         teamLowWater = {};
         teamHp = {};
@@ -121,6 +126,23 @@ module MatchTimeline
                 {
                     if (started && decision) { try { ingestDecision(decision, turnContext); } catch (e) { } }
                     return origHandle.apply(this, arguments);
+                };
+            }
+        }
+        catch (e) { }
+
+        // Observe the first streamed say chunks, not just the final decision. The
+        // final decision arrives right as the worm starts acting and the live bubble
+        // is hidden, so using only handleDecision makes clips start too late.
+        try
+        {
+            if (typeof ArenaController != "undefined" && ArenaController.prototype && ArenaController.prototype.showThoughtBubble)
+            {
+                var origBubble = ArenaController.prototype.showThoughtBubble;
+                ArenaController.prototype.showThoughtBubble = function (turnContext, text)
+                {
+                    if (started && text) { try { ingestStreamingTaunt(text, turnContext); } catch (e) { } }
+                    return origBubble.apply(this, arguments);
                 };
             }
         }
@@ -172,34 +194,90 @@ module MatchTimeline
         return meta;
     }
 
-    function ingestDecision(decision, turnContext)
+    function turnTauntKey(turnContext, teamIndex, wormName)
     {
-        var teamIndex = turnContext ? turnContext.playerIndex : -1;
-        var wormName = turnContext ? turnContext.wormName : "";
-        var clip = decision.clipSignal && typeof decision.clipSignal == "object" ? decision.clipSignal : null;
+        if (turnContext)
+        {
+            return [
+                turnContext.turnNumber || 0,
+                turnContext.sameTurnBatch || 0,
+                turnContext.playerIndex,
+                turnContext.wormName || wormName
+            ].join(":");
+        }
+        return teamIndex + ":" + wormName;
+    }
+
+    function makeTauntEvent(teamIndex, wormName, turnContext, text, target, clip)
+    {
         var bubble = currentBubbleMeta(teamIndex, wormName);
-        var taunt = {
+        return {
             t: now(),
+            kind: "taunt",
             teamIndex: teamIndex,
             wormId: turnContext ? turnContext.wormId : ("team-" + teamIndex + ":" + wormName),
             name: wormName,
-            text: String(decision.trashTalk || "").trim(),
-            target: decision.target ? String(decision.target) : "",
+            text: String(text || "").trim(),
+            target: target ? String(target) : "",
             screenX: bubble.screenX,
             screenY: bubble.screenY,
             canvasW: bubble.canvasW,
             canvasH: bubble.canvasH,
             teamColor: bubble.teamColor,
-            clip: clip
+            clip: clip || null
         };
+    }
+
+    function updateTauntMeta(taunt, teamIndex, wormName, text, target, clip)
+    {
+        var bubble = currentBubbleMeta(teamIndex, wormName);
+        var nextText = String(text || "").trim();
+        if (nextText) { taunt.text = nextText; }
+        if (target != null) { taunt.target = String(target); }
+        if (clip) { taunt.clip = clip; }
+        taunt.screenX = bubble.screenX;
+        taunt.screenY = bubble.screenY;
+        taunt.canvasW = bubble.canvasW;
+        taunt.canvasH = bubble.canvasH;
+        taunt.teamColor = bubble.teamColor;
         lastTaunt[teamIndex] = taunt;
-        if (taunt.text)
+    }
+
+    function ingestStreamingTaunt(text, turnContext)
+    {
+        var teamIndex = turnContext ? turnContext.playerIndex : -1;
+        var wormName = turnContext ? turnContext.wormName : "";
+        var clean = String(text || "").trim();
+        if (!clean) { return; }
+        var key = turnTauntKey(turnContext, teamIndex, wormName);
+        var existing = streamTauntByTurn[key];
+        if (existing)
         {
-            events.push({
-                t: taunt.t, kind: "taunt", teamIndex: teamIndex, wormId: taunt.wormId, name: wormName,
-                text: taunt.text, target: taunt.target, screenX: taunt.screenX, screenY: taunt.screenY,
-                canvasW: taunt.canvasW, canvasH: taunt.canvasH, teamColor: taunt.teamColor, clip: clip
-            });
+            updateTauntMeta(existing, teamIndex, wormName, clean, null, null);
+            return;
+        }
+
+        var taunt = makeTauntEvent(teamIndex, wormName, turnContext, clean, "", null);
+        streamTauntByTurn[key] = taunt;
+        lastTaunt[teamIndex] = taunt;
+        events.push(taunt);
+    }
+
+    function ingestDecision(decision, turnContext)
+    {
+        var teamIndex = turnContext ? turnContext.playerIndex : -1;
+        var wormName = turnContext ? turnContext.wormName : "";
+        var clip = decision.clipSignal && typeof decision.clipSignal == "object" ? decision.clipSignal : null;
+        var key = turnTauntKey(turnContext, teamIndex, wormName);
+        var taunt = streamTauntByTurn[key];
+        if (taunt)
+        {
+            updateTauntMeta(taunt, teamIndex, wormName, decision.trashTalk, decision.target, clip);
+        } else
+        {
+            taunt = makeTauntEvent(teamIndex, wormName, turnContext, decision.trashTalk, decision.target, clip);
+            lastTaunt[teamIndex] = taunt;
+            if (taunt.text) { events.push(taunt); }
         }
         // An agent that flags its own turn as clip-worthy seeds a weak moment that
         // any real outcome below will strengthen. Purely cosmetic, never tactical.
@@ -391,6 +469,34 @@ module MatchTimeline
                 lastWinnerTeam = winTeamIndex;
                 var teamName = game.winner.getTeam().name;
                 events.push({ t: t, kind: "win", teamIndex: winTeamIndex, teamName: teamName });
+                if (!finalDeathMomentAdded)
+                {
+                    finalDeathMomentAdded = true;
+                    var lastDeath = latestDeathBefore(t);
+                    var lastTalk = latestTauntBefore(t);
+                    var actor = null;
+                    var teams = [winTeamIndex];
+                    if (lastTalk)
+                    {
+                        var talkTeam = teamName;
+                        try
+                        {
+                            if (game.players[lastTalk.teamIndex]) { talkTeam = game.players[lastTalk.teamIndex].getTeam().name; }
+                        }
+                        catch (e) { }
+                        actor = { name: lastTalk.name, team: talkTeam, teamIndex: lastTalk.teamIndex };
+                        teams = [lastTalk.teamIndex];
+                    }
+                    addMoment("final_death",
+                        lastTalk ? lastTalk.t - TAUNT_PREROLL_MS : Math.max(0, t - 5000),
+                        t + 4500,
+                        1,
+                        "💀 Last Death" + (lastDeath ? (" — " + lastDeath.name) : ""),
+                        (lastDeath ? (lastDeath.name + " falls. ") : "") + teamName + " wins the match",
+                        actor,
+                        teams);
+                    bumpMood(0.9);
+                }
                 if (teamLowWater[winTeamIndex])
                 {
                     addMoment("comeback", Math.max(0, t - 9000), t + 2500, 0.9,
@@ -406,6 +512,24 @@ module MatchTimeline
     }
 
     // ---- moment helpers ------------------------------------------------------
+
+    function latestDeathBefore(t)
+    {
+        for (var i = events.length - 1; i >= 0; i--)
+        {
+            if (events[i].kind == "death" && events[i].t <= t + 250) { return events[i]; }
+        }
+        return null;
+    }
+
+    function latestTauntBefore(t)
+    {
+        for (var i = events.length - 1; i >= 0; i--)
+        {
+            if (events[i].kind == "taunt" && events[i].text && events[i].t <= t) { return events[i]; }
+        }
+        return null;
+    }
 
     function addMoment(type, t0, t1, score, title, subtitle, actor, teamIndexes)
     {
@@ -492,13 +616,6 @@ module MatchTimeline
             segments: [{ t0: Math.max(0, endSec - 30), t1: endSec + 1, rate: 1 }]
         });
 
-        var fullRate = Math.max(2, Math.round(endSec / 40));
-        list.push({
-            id: "full", icon: "🎬", title: "Whole match, sped up",
-            subtitle: "~" + Math.max(1, Math.round(endSec / fullRate)) + "s timelapse",
-            segments: [{ t0: 0, t1: endSec + 1, rate: fullRate }]
-        });
-
         var byType: any = {};
         for (var i = 0; i < moments.length; i++)
         {
@@ -519,6 +636,7 @@ module MatchTimeline
         var groups: any = {
             friendly_fire: { icon: "🤦", name: "Friendly fire" },
             instant_karma: { icon: "😈", name: "Instant karma" },
+            final_death: { icon: "💀", name: "Last Death" },
             beef: { icon: "🔥", name: "Beef" },
             epic_kill: { icon: "💥", name: "Epic hits" },
             multi_kill: { icon: "💀", name: "Multi-kills" },
@@ -528,10 +646,8 @@ module MatchTimeline
         {
             var ms = byType[key];
             if (!ms || !ms.length) { continue; }
-            // Slow-mo the impact-heavy reels for emphasis.
-            var rate = (key == "epic_kill" || key == "multi_kill") ? 0.6 : 1;
             var segs: any[] = [];
-            for (var j = 0; j < ms.length; j++) { segs = segs.concat(segmentsForMoment(ms[j], rate)); }
+            for (var j = 0; j < ms.length; j++) { segs = segs.concat(segmentsForMoment(ms[j], 1)); }
             list.push({ id: key, icon: groups[key].icon, title: groups[key].name + " (" + ms.length + ")", subtitle: ms[0].subtitle || "", segments: segs });
         }
 
@@ -558,13 +674,15 @@ module MatchTimeline
             // The clip STARTS on the trash-talk: a window long enough to stream + read
             // the line, then it ends and the action segment plays.
             var ts = taunt.t / 1000;
+            var segStart = Math.max(0, (taunt.t - TAUNT_PREROLL_MS) / 1000);
             var t1 = ts + tauntWindowMs(taunt.text) / 1000;
             var meta = {
                 t: taunt.t, name: taunt.name, text: taunt.text, teamIndex: taunt.teamIndex, wormId: taunt.wormId,
                 screenX: taunt.screenX, screenY: taunt.screenY, canvasW: taunt.canvasW, canvasH: taunt.canvasH,
-                teamColor: taunt.teamColor
+                teamColor: taunt.teamColor,
+                localStartMs: taunt.t - Math.round(segStart * 1000)
             };
-            segs.push({ t0: Math.max(0, ts), t1: t1, rate: 1, taunt: meta });
+            segs.push({ t0: segStart, t1: t1, rate: 1, taunt: meta });
             actionT0 = Math.max(actionT0, t1);
         }
         if (moment.t1 / 1000 > actionT0 + 0.05) { segs.push({ t0: actionT0, t1: moment.t1 / 1000, rate: rate || 1 }); }
@@ -577,7 +695,7 @@ module MatchTimeline
     export function tauntWindowMs(text)
     {
         var len = text ? String(text).length : 20;
-        return Math.min(5400, Math.max(2600, Math.round(len / 24 * 1000) + 1700));
+        return Math.min(7200, Math.max(3600, Math.round(len / 18 * 1000) + 2200));
     }
 
     // The trash-talk line active at master-time tMs (the render streams it into the

@@ -1,4 +1,5 @@
 ///<reference path="../Game.ts"/>
+///<reference path="../Settings.ts"/>
 ///<reference path="../system/Physics.ts"/>
 ///<reference path="../system/Utilies.ts"/>
 
@@ -160,7 +161,7 @@ module ArenaSnapshot
         var lines = [];
         var mapWidth = game.terrain.getWidth();
         var mapHeight = game.terrain.getHeight();
-        var waterLine = mapHeight - 150;
+        var waterLine = game.terrain.getWaterLine();
 
         for (var i = 0; i < offsets.length; i++)
         {
@@ -179,7 +180,53 @@ module ArenaSnapshot
         var rightWall = firstWall(game, pos, 1);
         lines.push("- Left movement/shot-height obstruction: " + (leftWall ? leftWall.note + " after " + leftWall.distance + " px" : "no body-height wall within 520 px") + ".");
         lines.push("- Right movement/shot-height obstruction: " + (rightWall ? rightWall.note + " after " + rightWall.distance + " px" : "no body-height wall within 520 px") + ".");
-        lines.push("- Water danger: y near " + waterLine + " and below is unsafe; map bottom is y " + mapHeight + ".");
+        lines.push("- Water danger: current water line is y " + Math.round(waterLine) + "; y at or below that line is unsafe. Map bottom is y " + mapHeight + ".");
+
+        return lines.join("\n");
+    }
+
+    function waterPressureMap(game, living, currentWorm, currentPos)
+    {
+        var lines = [];
+        var physicalTurn = game.state && game.state.getPhysicalTurnSerial ? game.state.getPhysicalTurnSerial() : 0;
+        var waterLine = game.terrain.getWaterLine();
+        var baseWaterLine = typeof game.terrain.baseWaterLine == "number" ? game.terrain.baseWaterLine : waterLine;
+        var startTurn = (typeof Settings != "undefined") ? Math.max(0, Math.round(Settings.WATER_RISE_START_TURN || 0)) : 0;
+        var pixelsPerTurn = (typeof Settings != "undefined") ? Math.max(0, Math.round(Settings.WATER_RISE_PIXELS_PER_TURN || Settings.DEFAULT_WATER_RISE_PIXELS_PER_TURN)) : 0;
+        var enabled = startTurn > 0 && pixelsPerTurn > 0;
+        var activeClearance = Math.round(waterLine - currentPos.y);
+
+        lines.push("- Physical turn serial: " + physicalTurn + ".");
+        lines.push("- Current water line: y " + Math.round(waterLine) + ". Active worm `" + currentWorm.name + "` y " + currentPos.y + ", " + activeClearance + " px above water.");
+        if (enabled)
+        {
+            var nextRiseTurn = physicalTurn < startTurn ? startTurn : physicalTurn + 1;
+            var nextRiseCount = Math.max(0, nextRiseTurn - startTurn + 1);
+            var nextWaterLine = Math.max(0, baseWaterLine - (nextRiseCount * pixelsPerTurn));
+            lines.push("- Rising water: enabled, starts on turn " + startTurn + ", automatic rise amount " + pixelsPerTurn + " px at each new physical turn.");
+            lines.push("- Next rise: turn " + nextRiseTurn + ", water line will become y " + Math.round(nextWaterLine) + ".");
+        } else
+        {
+            lines.push("- Rising water: disabled. Set the rising-water start turn above 0 to enable sudden-death water.");
+        }
+
+        for (var i = 0; i < living.length; i++)
+        {
+            var entry = living[i];
+            var clearance = Math.round(waterLine - entry.y);
+            var risk = "";
+            if (clearance <= 0)
+            {
+                risk = "at or below water now";
+            } else if (enabled)
+            {
+                risk = "unsafe after " + Math.ceil(clearance / pixelsPerTurn) + " more rises if position does not improve";
+            } else
+            {
+                risk = "rising water disabled";
+            }
+            lines.push("- " + entry.relation + " `" + entry.name + "`: " + clearance + " px above water; " + risk + ".");
+        }
 
         return lines.join("\n");
     }
@@ -277,6 +324,14 @@ module ArenaSnapshot
         {
             return "tactical use facts: large high-damage thrown explosive with longer fuse; large blast affects clusters and terrain pockets; risk: very large blast makes friendly/self damage likely near allies or close walls; agent primitives: aim, set_power, fire, observeMs 8000-9000. physics: launch speed v0 px/s = percent * 12; same parabola R px = v0*v0*sin(2*elev)/300, gravity = 300 px/s^2, 6 sec fuse; the blast reaches about 360 px, so keep allies and yourself well outside that radius.";
         }
+        if (name == "Banana Bomb")
+        {
+            return "tactical use facts: Worms-style Banana Bomb: 5 sec fuse, dynamite-power main blast, then five high-damage banana bomblets that explode on contact or timeout; risk: extreme self/friendly fire, especially in tight tunnels or low ceilings; agent primitives: aim, set_power, fire, observeMs 8500-9000. physics: launch speed v0 px/s = percent * 12; parabola R px = v0*v0*sin(2*elev)/300, gravity = 300 px/s^2; main and bomblets can each deal up to about 75 damage near their centers.";
+        }
+        if (name == "Cluster Bomb")
+        {
+            return "tactical use facts: Worms-style Cluster Bomb: 4 sec fuse, small main explosion, then five fragments that explode on contact or timeout; best when fragments can fall into a pocket or overlap a target; risk: fragments spread unpredictably and can splash allies/self; agent primitives: aim, set_power, fire, observeMs 7500-9000. physics: launch speed v0 px/s = percent * 12; parabola R px = v0*v0*sin(2*elev)/300, gravity = 300 px/s^2; main and each fragment can deal up to about 30 damage near center.";
+        }
         if (name == "Dynamite")
         {
             return "tactical use facts: places explosive at current worm position; risk: nearly guaranteed self-damage if used alone or while trapped; agent primitives: select_weapon, fire, then movement is risky because fuse is short. physics: dropped at your feet with no throw (aim and power are ignored); detonates about 5 sec later inside a roughly 180 px effect radius; walk or jetpack at least 180 px away before it blows.";
@@ -289,17 +344,53 @@ module ArenaSnapshot
         {
             return "tactical use facts: short burst ray weapon ending the turn; needs a straight lane; risk: digs terrain/whiffs if line is blocked; agent primitives: aim, fire. physics: hitscan like Shotgun, range 900 px, no power, about 3 rays per burst on the same aim; aim degrees = atan2(dy, dx) straight at a clear-line target; self-blast if clearance at that angle is under 30 px.";
         }
+        if (name == "Uzi")
+        {
+            return "tactical use facts: rapid ray burst ending the turn; good for pushing a worm along terrain or into water, weak if the line is blocked; agent primitives: aim, fire. physics: hitscan, range 900 px, no power, 10 low-damage rays for up to about 50 direct damage plus shove if all connect. No new agent primitive is required.";
+        }
+        if (name == "Handgun")
+        {
+            return "tactical use facts: six-shot ray burst ending the turn; precise but low damage; agent primitives: aim, fire. physics: hitscan, range 900 px, no power, 6 bullets at about 5 damage each for up to 30 damage if all connect. No new agent primitive is required.";
+        }
         if (name == "Ninja Rope")
         {
             return "tactical use facts: manual rope movement using current aim to hook overhead/side terrain; feedback says attached/no anchor and reports movement; risk: misses if aimed into empty sky, bad release can drop into water; agent primitives: aim, rope_fire, rope_contract/rope_expand, rope_swing left/right with ms, rope_release.";
+        }
+        if (name == "Teleport")
+        {
+            return "tactical use facts: utility relocation to chosen world coordinates; success ends the turn immediately with no retreat time; invalid teleport coordinates return feedback without consuming Teleport ammo; risk: bad coordinates can be rejected if outside bounds, below water, or overlapping terrain; agent primitives: teleport(x,y).";
         }
         if (name == "Drill")
         {
             return "tactical use facts: drills terrain downward around the worm for repositioning or digging out; risk: can drop you toward water or waste turn if used in open air; agent primitives: select_weapon, fire, wait/observe.";
         }
+        if (name == "Blowtorch")
+        {
+            return "tactical use facts: directional tunnel cutter using your current aim; can damage a worm in the torch path for 15 per contact tick and ends the turn after the burn; risk: may open a path toward water or expose your worm; agent primitives: aim, fire, observeMs 5500-7000. No new agent primitive is required.";
+        }
+        if (name == "Baseball Bat")
+        {
+            return "tactical use facts: close-range melee hit ending the turn; damage is fixed at 30 plus shove/fall/water risk; must be adjacent and aimed toward the target; risk: misses if target is beyond about 86 px or terrain blocks the short lane; agent primitives: aim, fire. No new agent primitive is required.";
+        }
+        if (name == "Prod")
+        {
+            return "tactical use facts: very close horizontal shove ending the turn; deals 0 direct damage but can push a worm into water or off a ledge; must stand next to the target and face it; risk: total waste away from edges; agent primitives: face/aim/walk if needed, then fire. No new agent primitive is required.";
+        }
+        if (name == "Fire Punch")
+        {
+            return "tactical use facts: vertical melee uppercut ending the turn; fixed 30 damage, strong upward shove, and cuts a vertical shaft through terrain; best against worms above or in a thin ceiling; risk: misses side targets because it punches upward; agent primitives: fire after positioning under target. No new agent primitive is required.";
+        }
+        if (name == "Dragon Ball")
+        {
+            return "tactical use facts: horizontal close-range energy strike ending the turn; fixed 30 damage with strong sideways shove and a small terrain cut along the lane; best for knocking worms into water; risk: misses if target is not on the facing side within about 165 px; agent primitives: face target, fire. No new agent primitive is required.";
+        }
         if (name == "Bazooka")
         {
             return "tactical use facts: direct projectile explosive with immediate terrain contact detonation; needs muzzle clearance and open direction to avoid instant wall hit; risk: close wall/ground impacts cause self-hit; agent primitives: aim, set_power, fire, observeMs 6500-9000. physics: launch speed v0 px/s = percent * 5.73; flat range R px = v0*v0*sin(2*elev)/300 where elev is launch elevation above horizontal and gravity = 300 px/s^2; detonates on first terrain contact so keep the whole arc clear (R_max about 1094 px at 100 percent and 45 deg); compute percent for the target distance.";
+        }
+        if (name == "Mortar")
+        {
+            return "tactical use facts: contact projectile that makes a small 20-damage main explosion and then six 20-damage fragments; needs muzzle clearance and open direction; risk: fragments are hard to place and can splash allies/self; agent primitives: aim, set_power, fire, observeMs 7500-9000. physics: launch speed v0 px/s = percent * 5.73; flat range R px = v0*v0*sin(2*elev)/300, gravity = 300 px/s^2; main projectile detonates on first terrain contact, then fragments explode on contact or timeout.";
         }
         return "tactical use facts: unknown inventory item; inspect current state and avoid using it if the primitive is unclear.";
     }
@@ -320,7 +411,7 @@ module ArenaSnapshot
         var lower = name.toLowerCase();
         var aimDegrees = currentAimDegrees(worm);
 
-        if (lower.indexOf("shotgun") >= 0 || lower.indexOf("minigun") >= 0)
+        if (lower.indexOf("shotgun") >= 0 || lower.indexOf("minigun") >= 0 || lower.indexOf("uzi") >= 0 || lower.indexOf("handgun") >= 0)
         {
             return "Physics check (your inputs this shot): weapon `" + name + "`, aim " + aimDegrees + " deg, hitscan with no power. Compare the aim you used against the target direction reported below to calibrate your next shot.";
         }
@@ -329,12 +420,12 @@ module ArenaSnapshot
         var percent = forceIndicator && forceIndicator.getForcePercentage ? Math.round(forceIndicator.getForcePercentage()) : 1;
 
         // Per-weapon launch-speed multiplier in px/s per power percent (the same numbers
-        // the prompt teaches). Throwables share 12; the Bazooka impulse works out to 5.73.
+        // the prompt teaches). Throwables share 12; projectile launchers use 5.73.
         var multiplier = 0;
-        if (lower.indexOf("grenade") >= 0)
+        if (lower.indexOf("grenade") >= 0 || lower.indexOf("banana") >= 0 || lower.indexOf("cluster") >= 0)
         {
             multiplier = 12;
-        } else if (lower.indexOf("bazooka") >= 0)
+        } else if (lower.indexOf("bazooka") >= 0 || lower.indexOf("mortar") >= 0)
         {
             multiplier = 5.73;
         }
@@ -604,7 +695,7 @@ module ArenaSnapshot
         markdown += "- Current weapon: " + weaponInfo(weapon) + ", force percent " + forcePercent + ".\n";
         markdown += "- Current blast/ray risk radius: " + currentBlastRadius + " px. This is only weapon metadata, not a trajectory helper.\n";
         markdown += "- Wind: speed 0, direction none. This clone does not implement wind drift.\n";
-        markdown += "- Map bounds: width " + game.terrain.getWidth() + ", height " + game.terrain.getHeight() + ". Water is near the bottom of the visible terrain.\n";
+        markdown += "- Map bounds: width " + game.terrain.getWidth() + ", height " + game.terrain.getHeight() + ". Current water line y " + Math.round(game.terrain.getWaterLine()) + "; y at or below water is unsafe.\n";
         markdown += "- Your perception mode: " + teamConfig.perception + ".\n\n";
         markdown += "- Visible chat language: " + (teamConfig.chatLanguage || "English") + ". Use this language for `say` and trash talk only; keep tool/action fields in English.\n\n";
 
@@ -616,6 +707,9 @@ module ArenaSnapshot
             markdown += "- " + entry.relation + " `" + entry.name + "` [" + entry.team + "] at (" + entry.x + ", " + entry.y + "), HP " + entry.hp + ": dx " + entry.dx + ", dy " + entry.dy + ", distance " + entry.distance + " px, direction " + entry.direction + ", line: " + entry.obstruction + ".\n";
         }
         markdown += "\n";
+
+        markdown += "## Water and sudden-death pressure\n\n";
+        markdown += waterPressureMap(game, living, currentWorm, currentPos) + "\n\n";
 
         markdown += "## Terrain around active worm\n\n";
         markdown += terrainProfile(game, currentPos) + "\n\n";
@@ -673,9 +767,10 @@ module ArenaSnapshot
         }
 
         markdown += "## Action primitives\n\n";
-        markdown += "Return a batch of low-level actions only. Available tools: `inspect_inventory`, `select_weapon`, `walk`, `jump`, `backflip`, `aim`, `aim_delta`, `set_power`, `fire`, `wait`, `jetpack_start`, `jetpack_thrust`, `jetpack_stop`, `rope_fire`, `rope_swing`, `rope_contract`, `rope_expand`, `rope_release`.\n";
+        markdown += "Return a batch of low-level actions only. Available tools: `inspect_inventory`, `select_weapon`, `walk`, `jump`, `backflip`, `aim`, `aim_delta`, `set_power`, `fire`, `wait`, `teleport`, `jetpack_start`, `jetpack_thrust`, `jetpack_stop`, `rope_fire`, `rope_swing`, `rope_contract`, `rope_expand`, `rope_release`.\n";
         markdown += "There is no voluntary end-turn/pass tool. The game ends this worm turn through shot resolution, death, water, mine/physics turn change, or timer expiration. If control remains, the same worm receives fresh feedback while time remains.\n";
         markdown += "`walk` accepts 1-160 primitive steps. Small counts are short key holds; large counts are longer key holds. Terrain may block actual movement; feedback reports dx/dy.\n";
+        markdown += "`Teleport` accepts `teleport(x,y)` destination coordinates in world pixels. Success ends the worm turn immediately. invalid teleport coordinates return feedback without consuming Teleport ammo.\n";
         markdown += "`Jet Pack` and `Ninja Rope` are manual low-level mobility tools. Jetpack screen-relative directions: `up` decreases y, `left` decreases x, `right` increases x, `up_left`, `up_right`. Rope: aim, fire, contract/expand, `rope_swing` left/right, release.\n";
         markdown += "No inventory item is a default move. Inputs for your own action mix: current state, personal memory, inventory, and feedback.\n";
         markdown += "No `move_to`, no computed trajectory helper, no autopilot.\n";

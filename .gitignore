@@ -39,6 +39,7 @@ dist/
 # Local asset packs and manifests. Example manifests (*.example.json) are kept.
 assets/worms-*/
 assets/*.local.json
+WAAss/
 # Downloaded or generated music tracks stay local unless explicitly licensed.
 assets/music/*
 # Local video exports from the clip studio.

@@ -777,6 +777,12 @@ class ArenaController
             return this.walk(worm, action.direction, action.steps || 12, turnContext).then(() => ArenaTelemetry.finishAction());
         }
 
+        if (tool == "teleport")
+        {
+            this.attemptTeleport(player, worm, action.x, action.y);
+            return this.wait(450, turnContext).then(() => ArenaTelemetry.finishAction());
+        }
+
         if (tool == "jetpack_start")
         {
             this.startJetPack(player, worm);
@@ -973,6 +979,14 @@ class ArenaController
         {
             return { observeMs: 8500, ballistic: true };
         }
+        if (name.indexOf("banana") >= 0)
+        {
+            return { observeMs: 9000, ballistic: true };
+        }
+        if (name.indexOf("cluster") >= 0)
+        {
+            return { observeMs: 7800, ballistic: true };
+        }
         if (name.indexOf("grenade") >= 0)
         {
             return { observeMs: 6500, ballistic: true };
@@ -981,15 +995,27 @@ class ArenaController
         {
             return { observeMs: 6500, ballistic: true };
         }
+        if (name.indexOf("mortar") >= 0)
+        {
+            return { observeMs: 7600, ballistic: true };
+        }
         if (name.indexOf("bazooka") >= 0 || name.indexOf("missile") >= 0)
         {
             return { observeMs: 6500, ballistic: true };
+        }
+        if (name.indexOf("blowtorch") >= 0)
+        {
+            return { observeMs: 5600, ballistic: false };
+        }
+        if (name.indexOf("baseball") >= 0 || name.indexOf("prod") >= 0 || name.indexOf("fire punch") >= 0 || name.indexOf("dragon ball") >= 0)
+        {
+            return { observeMs: 1400, ballistic: false };
         }
         if (name.indexOf("shotgun") >= 0)
         {
             return { observeMs: 1500, ballistic: false };
         }
-        if (name.indexOf("minigun") >= 0)
+        if (name.indexOf("minigun") >= 0 || name.indexOf("uzi") >= 0 || name.indexOf("handgun") >= 0)
         {
             return { observeMs: 2200, ballistic: false };
         }
@@ -1030,6 +1056,34 @@ class ArenaController
     {
         var pos = Physics.vectorMetersToPixels(worm.body.GetPosition().Copy());
         return "(" + Math.round(pos.x) + ", " + Math.round(pos.y) + ")";
+    }
+
+    attemptTeleport(player, worm, x, y)
+    {
+        var weapon = this.ensureWeapon(player, "Teleport");
+        if (!weapon)
+        {
+            ArenaTelemetry.addNote("Teleport rejected: Teleport weapon was not found.");
+            return null;
+        }
+        if (!weapon.attemptTeleport)
+        {
+            ArenaTelemetry.addNote("Teleport rejected: current Teleport weapon cannot validate destinations.");
+            return null;
+        }
+        var result = weapon.attemptTeleport(worm, x, y);
+        if (result && result.ok)
+        {
+            ArenaTelemetry.addNote("Teleport succeeded: " + result.reason);
+        } else
+        {
+            ArenaTelemetry.addNote("Teleport rejected: " + (result ? result.reason : "unknown rejection") + ".");
+        }
+        if (GameInstance.weaponMenu)
+        {
+            GameInstance.weaponMenu.refresh();
+        }
+        return result;
     }
 
     startJetPack(player, worm)
@@ -1632,7 +1686,7 @@ class ArenaController
     {
         var lines = String(feedback || "").split("\n").filter(function (line)
         {
-            return /Explosion at|Explosion relative|relative to `|Miss feedback|SELF DAMAGE|FRIENDLY FIRE|ENEMY HIT|Damage summary|Safety lesson|Shot produced no recorded|Voluntarily ended|Walked|Selected weapon|Set aim|Set force|Fire requested|Said:/.test(line);
+            return /Explosion at|Explosion relative|relative to `|Miss feedback|SELF DAMAGE|FRIENDLY FIRE|ENEMY HIT|Damage summary|Safety lesson|Shot produced no recorded|Voluntarily ended|Walked|Selected weapon|Teleport rejected|Teleport succeeded|Set aim|Set force|Fire requested|Said:/.test(line);
         });
 
         if (lines.length == 0)
@@ -1663,6 +1717,10 @@ class ArenaController
             if (action.percent != null)
             {
                 parts.push("power " + action.percent);
+            }
+            if (action.tool == "teleport" && action.x != null && action.y != null)
+            {
+                parts.push("to (" + Math.round(action.x) + "," + Math.round(action.y) + ")");
             }
             return parts.join(" ");
         }).join(" -> ");

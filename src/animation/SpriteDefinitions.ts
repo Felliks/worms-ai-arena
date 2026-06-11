@@ -33,10 +33,20 @@ module Sprites
         dynamite: { imageName: "icondynamite" },
         ninjaRope: { imageName: "iconrope" },
         jetPack: { imageName: "iconjetpack" },
+        iconTeleport: { imageName: "iconteleport" },
         shotgun: { imageName: "iconshotgun" },
         minigun: { imageName: "iconminigun" },
         bazooka: { imageName: "iconbazooka" },
-        //blowTorch: { imageName: "iconblowtorch" },
+        bananaBomb: { imageName: "iconbanana" },
+        clusterBomb: { imageName: "iconcluster" },
+        mortar: { imageName: "iconmortar" },
+        uzi: { imageName: "iconuzi" },
+        handgun: { imageName: "iconhandgun" },
+        baseballBat: { imageName: "iconbaseball" },
+        prod: { imageName: "iconprod" },
+        firePunch: { imageName: "iconfirepnch" },
+        dragonBall: { imageName: "icondragball" },
+        blowTorch: { imageName: "iconblowtorch" },
         //sheep: { imageName: "iconsheep" },
         //landMine: { imageName: "iconmine" },
 
@@ -84,6 +94,51 @@ module Sprites
         gernade: {
 
             imageName: "grenade",
+            frameY: 0,
+            frameCount: 32,
+            msPerFrame: 10,
+
+        },
+
+        banana: {
+
+            imageName: "banana",
+            frameY: 0,
+            frameCount: 32,
+            msPerFrame: 10,
+
+        },
+
+        cluster: {
+
+            imageName: "cluster",
+            frameY: 0,
+            frameCount: 32,
+            msPerFrame: 10,
+
+        },
+
+        clusterlet: {
+
+            imageName: "clustlet",
+            frameY: 0,
+            frameCount: 6,
+            msPerFrame: 10,
+
+        },
+
+        bananaClusterlet: {
+
+            imageName: "hclustlt",
+            frameY: 0,
+            frameCount: 32,
+            msPerFrame: 10,
+
+        },
+
+        mortar: {
+
+            imageName: "mortar",
             frameY: 0,
             frameCount: 32,
             msPerFrame: 10,
@@ -330,6 +385,33 @@ module Sprites
 
         },
 
+        takeOutTeleport: {
+
+            imageName: "wtellnk",
+            frameY: 0,
+            frameCount: 10,
+            msPerFrame: 50,
+
+        },
+
+        readyTeleport: {
+
+            imageName: "wtelbak",
+            frameY: 0,
+            frameCount: 10,
+            msPerFrame: 50,
+
+        },
+
+        teleportDisappear: {
+
+            imageName: "wteldsv",
+            frameY: 0,
+            frameCount: 48,
+            msPerFrame: 25,
+
+        },
+
         aimingShotgun: {
 
             imageName: "wshotp",
@@ -396,6 +478,78 @@ module Sprites
 
         },
 
+        uziAim: {
+            imageName: "wuzi",
+            frameY: 32/2,
+            frameCount: 32,
+            msPerFrame: 60,
+
+        },
+
+        uziFire: {
+            imageName: "wuzif",
+            frameY: 32/2,
+            frameCount: 32,
+            msPerFrame: 45,
+
+        },
+
+        uziTakeOut: {
+            imageName: "wuzilnk",
+            frameY: 0,
+            frameCount: 10,
+            msPerFrame: 50,
+
+        },
+
+        handgunAim: {
+            imageName: "whandg",
+            frameY: 32/2,
+            frameCount: 32,
+            msPerFrame: 60,
+
+        },
+
+        handgunFire: {
+            imageName: "whandf",
+            frameY: 32/2,
+            frameCount: 32,
+            msPerFrame: 45,
+
+        },
+
+        baseballBatFire: {
+            imageName: "wbatfrd",
+            frameY: 32 / 2,
+            frameCount: 32,
+            msPerFrame: 40,
+
+        },
+
+        prod: {
+            imageName: "wprod",
+            frameY: 0,
+            frameCount: 5,
+            msPerFrame: 70,
+
+        },
+
+        firePunch: {
+            imageName: "wfist",
+            frameY: 0,
+            frameCount: 17,
+            msPerFrame: 45,
+
+        },
+
+        dragonBall: {
+            imageName: "wfirbl1",
+            frameY: 0,
+            frameCount: 24,
+            msPerFrame: 45,
+
+        },
+
         // minigunPutAway: {
         //    imageName: "wmgnbak",
         //    frameY: 0,
@@ -421,22 +575,22 @@ module Sprites
 
         //},
 
-        //takeOutBlowtorch: {
-        //    imageName: "wblowlk",
-        //    frameY: 0,
-        //    frameCount: 15,
-        //    msPerFrame: 60,
+        takeOutBlowtorch: {
+            imageName: "wblowlk",
+            frameY: 0,
+            frameCount: 15,
+            msPerFrame: 60,
 
-        //},
+        },
 
-        //blowtorching: {
+        blowtorching: {
 
-        //    imageName: "wbloww",
-        //    frameY: 0,
-        //    frameCount: 15,
-        //    msPerFrame: 60,
+            imageName: "wbloww",
+            frameY: 0,
+            frameCount: 15,
+            msPerFrame: 60,
 
-        //},
+        },
 
          
         takeOutBazooka: {
@@ -524,6 +678,14 @@ module Sprites
             frameY: 0,
             frameCount: 16,
             msPerFrame: 50,
+
+        },
+
+        magicHit: {
+            imageName: "magichit",
+            frameY: 0,
+            frameCount: 15,
+            msPerFrame: 30,
 
         },
 

@@ -35,7 +35,7 @@ module VideoCapture
 
     var HINT_THRESHOLD = 0.7;    // only nudge for genuinely juicy moments
     var HINT_COOLDOWN_MS = 18000;
-    var POST_ROLL_MS = 2600;     // keep the victory sound in the recording
+    var POST_ROLL_MS = 6500;     // keep the final death, last taunt, and victory sound in the recording
 
     function now()
     {

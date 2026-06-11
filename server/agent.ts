@@ -22,6 +22,7 @@ const ACTION_TOOLS = [
   "set_power",
   "fire",
   "wait",
+  "teleport",
   "jetpack_start",
   "jetpack_thrust",
   "jetpack_stop",
@@ -70,7 +71,9 @@ const RawActionSchema = z.object({
   degrees: z.any().optional(),
   percent: z.any().optional(),
   ms: z.any().optional(),
-  observeMs: z.any().optional()
+  observeMs: z.any().optional(),
+  x: z.any().optional(),
+  y: z.any().optional()
 });
 
 const ActionSchema = z.object({
@@ -83,7 +86,9 @@ const ActionSchema = z.object({
   degrees: z.number().min(-179).max(179).nullable(),
   percent: z.number().min(1).max(100).nullable(),
   ms: z.number().int().min(100).max(5000).nullable(),
-  observeMs: z.number().int().min(500).max(9000).nullable()
+  observeMs: z.number().int().min(500).max(9000).nullable(),
+  x: z.number().min(0).max(10000).nullable().default(null),
+  y: z.number().min(0).max(10000).nullable().default(null)
 });
 
 const RawAgentDecisionSchema = z.object({
@@ -223,8 +228,9 @@ If a target has dy < 0 it is above you. If dy > 0 it is below you.
 <shot_physics>
 These are the clone's real physics constants. Use them to compute your own aim and power; they are facts, not an auto-aim solver.
 Gravity pulls down at 300 px per second squared. Wind is 0.
-Ray weapons (Shotgun, Minigun): hitscan out to 900 px, no power meter. Aim degrees = atan2(dy, dx) of the target. The shot only lands if the straight line is open.
-Arced weapons (Hand Grenade, Holy Grenade, Bazooka): launch speed v0 in px per second scales with the power percent by a per-weapon multiplier (grenades use percent * 12, Bazooka uses percent * 5.73). Flat-ground range R px = v0 * v0 * sin(2 * elev) / 300, where elev is the launch elevation above horizontal. Choose elev and power so R reaches the target distance, then express elev as aim degrees toward the target's side.
+Ray weapons (Shotgun, Minigun, Uzi, Handgun): hitscan out to 900 px, no power meter. Aim degrees = atan2(dy, dx) of the target. The shot only lands if the straight line is open. Handgun is 6 low-damage bullets, Uzi is a rapid burst up to about 50 direct damage.
+Arced weapons (Hand Grenade, Holy Grenade, Banana Bomb, Cluster Bomb, Bazooka, Mortar): launch speed v0 in px per second scales with the power percent by a per-weapon multiplier (grenade/banana/cluster throwables use percent * 12, Bazooka/Mortar use percent * 5.73). Flat-ground range R px = v0 * v0 * sin(2 * elev) / 300, where elev is the launch elevation above horizontal. Cluster Bomb splits into five fragments, Banana Bomb into five high-damage banana bomblets, and Mortar into six fragments after contact.
+Close-range weapons (Baseball Bat, Prod, Fire Punch, Dragon Ball, Blowtorch): use fire after positioning; they do not need a new primitive. Baseball Bat deals 30 plus shove, Prod does no direct damage but shoves, Fire Punch deals 30 upward and cuts terrain, Dragon Ball deals 30 horizontally, Blowtorch cuts along current aim and can deal 15 per contact tick.
 Every weapon's own state line carries its exact multiplier, fuse, blast radius, and range cap. Read that line, then compute power and aim yourself for the current target distance and direction.
 </shot_physics>
 
@@ -251,6 +257,7 @@ If you are called again in the same physical worm turn, use the fresh feedback a
 - aim / aim_delta: absolute or relative angle control.
 - set_power: shot force percentage.
 - fire: shoot and observe result.
+- teleport: request Teleport destination coordinates x,y in world pixels. Teleport success ends the worm turn immediately with no retreat time. Teleport rejection returns engine feedback, does not move, and does not consume Teleport ammo.
 - jetpack_start: select and activate Jet Pack; successful activation consumes one Jet Pack ammo and starts a finite fuel pool.
 - jetpack_thrust: low-level Jet Pack thrust; screen-relative directions are up, left, right, up_left, or up_right; up decreases y, left decreases x, right increases x; ms is duration.
 - jetpack_stop: deactivate Jet Pack to land or conserve fuel.
@@ -263,6 +270,7 @@ If you are called again in the same physical worm turn, use the fresh feedback a
 <inventory_cheatsheet_rules>
 No inventory item is a default move. Treat weapon and mobility descriptions as facts about cost, risk, and available primitives, not as orders.
 inspect_inventory gives current weapon, ammo, and primitive notes. Pick a tool from the current map state, memory, inventory, and feedback.
+Teleport is a coordinate-selected utility, not a solver. Choose x,y yourself from the snapshot/screenshot. invalid teleport coordinates return feedback without consuming Teleport ammo; Teleport success ends the worm turn.
 Jet Pack and Ninja Rope are manual low-level mobility primitives. They are not pathfinding, route solving, or guaranteed escape.
 Mobile primitives do not finish the turn by themselves. After movement, either continue the same action batch or receive fresh same-worm feedback while time remains.
 Read movement feedback such as dx/dy, fuel, rope attached/no anchor, and new position before repeating a mobility primitive. Screen-relative direction facts are in the coordinate cheatsheet.
@@ -291,6 +299,8 @@ function action(toolName: string, fields: Partial<z.infer<typeof ActionSchema>> 
     percent: null,
     ms: null,
     observeMs: null,
+    x: null,
+    y: null,
     ...fields
   };
 }
@@ -409,7 +419,9 @@ function normalizeAction(input: z.infer<typeof RawActionSchema>, request?: Agent
     degrees: normalizeNumber(input.degrees, -179, 179),
     percent: normalizeNumber(input.percent, 1, 100),
     ms: normalizeNumber(input.ms, 100, 5000, true),
-    observeMs: normalizeNumber(input.observeMs, 500, 9000, true)
+    observeMs: normalizeNumber(input.observeMs, 500, 9000, true),
+    x: normalizeNumber(input.x, 0, 10000),
+    y: normalizeNumber(input.y, 0, 10000)
   });
 }
 
@@ -771,6 +783,7 @@ function buildMobilityPlanText(): string {
     "- `walk`, `jump`, and `backflip` cost no ammo and no fuel. Prefer them for small moves, and save the limited Jet Pack and Ninja Rope for gaps, water, or heights that walking and jumping cannot cross.",
     "- `jump` hops about 18-22 px up and a few px in your facing direction. It needs your feet on terrain; a mid-air jump does nothing. Use it to clear a small ledge or short gap, mount a step, or nudge into a firing position without spending Jet Pack ammo.",
     "- `backflip` launches about 50 px up and 50 px backward (opposite your current facing) and also needs feet on terrain. Use it to hop back off a ledge or open the space behind you.",
+    "- Teleport coordinate utility primitive: `teleport(x,y)` requests a destination in world pixels. You choose x,y yourself from the snapshot/screenshot. Teleport success ends the worm turn immediately with no retreat time. invalid teleport coordinates return feedback without consuming Teleport ammo.",
     "- Jet Pack manual low-level mobility primitives: `jetpack_start`, `jetpack_thrust`, `jetpack_stop`.",
     "- Jet Pack activation consumes one Jet Pack ammo and creates a finite fuel pool; thrust consumes fuel and feedback reports fuel before/after.",
     "- Jet Pack screen-relative directions: `up` decreases y, `left` decreases x, `right` increases x, `up_left` combines up+left, `up_right` combines up+right.",
@@ -778,6 +791,16 @@ function buildMobilityPlanText(): string {
     "- Ninja Rope feedback says attached/no anchor and any actual dx/dy movement. Rope swing uses screen-relative `left`/`right` while attached.",
     "- There is no voluntary end-turn tool. If the game still gives this worm control after setup or movement, the engine calls the same worm again with fresh feedback while time remains.",
     "- No `move_to`, route solver, autopilot, guaranteed escape, or guaranteed shot. You choose direction, duration, aim, weapon, and risk yourself."
+  ].join("\n");
+}
+
+function buildWaterPressureText(): string {
+  return [
+    "## Water pressure reading",
+    "- Read the snapshot's `## Water and sudden-death pressure` section before using mobility or Teleport near low ground.",
+    "- `water clearance` means current water line y minus worm y; small positive values mean the worm is close to drowning because y increases downward.",
+    "- Rising-water lines name the configured start turn, automatic rise amount, next water rise, and how many future rises would drown each worm if it stayed at the same y.",
+    "- These are factual turn-rule consequences, not a movement route, teleport target, or survival solver."
   ].join("\n");
 }
 
@@ -849,6 +872,7 @@ function buildPromptText(request: AgentTurnRequest): string {
     request.visionScreenshotPath ? `Debug copy of attached screenshot saved at: ${request.visionScreenshotPath}` : "",
     request.visionError ? `Vision error: ${request.visionError}` : "",
     buildFireDisciplineText(),
+    buildWaterPressureText(),
     buildLongTermCampaignPlanText(),
     buildMobilityPlanText(),
     buildPositioningPlaybookText(),

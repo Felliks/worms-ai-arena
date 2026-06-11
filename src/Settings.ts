@@ -19,6 +19,9 @@ module Settings
     // (Team reads WORMS_PER_TEAM; Worm reads WORM_HEALTH.)
     export var WORMS_PER_TEAM = 4;
     export var WORM_HEALTH = 80;
+    export var DEFAULT_WATER_RISE_PIXELS_PER_TURN = 30;
+    export var WATER_RISE_START_TURN = 0;
+    export var WATER_RISE_PIXELS_PER_TURN = DEFAULT_WATER_RISE_PIXELS_PER_TURN;
    
     //General game settings
     export var SOUND = false;
@@ -91,7 +94,7 @@ module Settings
     export function getSettingsFromUrl()
     {
         var argv = getUrlVars();
-        var commands = ["physicsDebugDraw","devMode","unitTest","sound","arena","teams","agentEndpoint","models","turnTime","turnMs","chatLang","chatLanguage","historySize","memoryWindow","memoryStrategy","maxBatches","maxBatchesPerTurn","assetPack"]
+        var commands = ["physicsDebugDraw","devMode","unitTest","sound","arena","teams","agentEndpoint","models","turnTime","turnMs","chatLang","chatLanguage","historySize","memoryWindow","memoryStrategy","maxBatches","maxBatchesPerTurn","assetPack","waterRiseStartTurn","waterRisePixelsPerTurn"]
 
         if (argv[commands[0]] == "true")
         {
@@ -191,6 +194,16 @@ module Settings
         if (argv[commands[17]])
         {
             ASSET_PACK = decodeURIComponent(argv[commands[17]]);
+        }
+
+        if (argv[commands[18]])
+        {
+            WATER_RISE_START_TURN = Math.max(0, Math.min(999, Math.round(Number(argv[commands[18]]) || 0)));
+        }
+
+        if (argv[commands[19]])
+        {
+            WATER_RISE_PIXELS_PER_TURN = Math.max(0, Math.min(200, Math.round(Number(argv[commands[19]]) || 0)));
         }
 
         if (argv["arenaDebug"] == "true")
